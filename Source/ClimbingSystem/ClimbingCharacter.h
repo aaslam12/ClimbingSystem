@@ -942,6 +942,16 @@ protected:
 	void UpdateCornerIK(float DeltaTime, class UClimbingAnimInstance* AnimInst);
 
 	// ========================================================================
+	// Camera Helpers
+	// ========================================================================
+
+	/** Updates camera nudge toward wall during climbing. */
+	void UpdateCameraNudge(float DeltaTime);
+
+	/** Updates camera lock interpolation. */
+	void UpdateCameraLock(float DeltaTime);
+
+	// ========================================================================
 	// Audio Helpers
 	// ========================================================================
 
@@ -1022,6 +1032,30 @@ protected:
 
 	/** Whether camera is currently locked. */
 	bool bCameraLocked = false;
+
+	/** Locked camera location target. */
+	FVector LockedCameraLocation = FVector::ZeroVector;
+
+	/** Locked camera rotation target. */
+	FRotator LockedCameraRotation = FRotator::ZeroRotator;
+
+	/** Camera lock blend time remaining. */
+	float CameraLockBlendTime = 0.0f;
+
+	/** Camera lock blend time total. */
+	float CameraLockBlendTimeTotal = 0.0f;
+
+	/** Camera release blend time remaining. */
+	float CameraReleaseBlendTime = 0.0f;
+
+	/** Camera release blend time total. */
+	float CameraReleaseBlendTimeTotal = 0.0f;
+
+	/** Original spring arm target arm length before lock. */
+	float OriginalTargetArmLength = 0.0f;
+
+	/** Original spring arm relative rotation before lock. */
+	FRotator OriginalSpringArmRotation = FRotator::ZeroRotator;
 
 	/** Original capsule half-height before climbing. */
 	float OriginalCapsuleHalfHeight = 0.0f;
