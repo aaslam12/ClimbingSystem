@@ -90,14 +90,14 @@ bool UClimbingMovementComponent::CanAttemptJump() const
 	return Super::CanAttemptJump();
 }
 
-bool UClimbingMovementComponent::DoJump(bool bReplayingMoves)
+bool UClimbingMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
 {
 	// Disable normal jump during climbing states
 	if (CurrentClimbingState != EClimbingState::None)
 	{
 		return false;
 	}
-	return Super::DoJump(bReplayingMoves);
+	return Super::DoJump(bReplayingMoves, DeltaTime);
 }
 
 bool UClimbingMovementComponent::ShouldUsePackedMovementRPCs() const
@@ -386,8 +386,8 @@ void UClimbingMovementComponent::UpdateAnchorFollowing()
 		// The anchor following is handled by SetBase in most cases
 		// This function is here for additional custom anchor logic if needed
 		
-		// Validate anchor is still valid
-		if (!AnchorComponent->IsValidLowLevel() || AnchorComponent->IsPendingKill())
+		// Validate anchor is still valid - use IsValid() instead of deprecated IsPendingKill()
+		if (!IsValid(AnchorComponent))
 		{
 			UE_LOG(LogClimbing, Warning, TEXT("ClimbingMovementComponent: Anchor invalidated, dropping"));
 			

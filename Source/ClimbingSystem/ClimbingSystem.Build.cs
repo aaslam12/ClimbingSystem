@@ -17,7 +17,8 @@ public class ClimbingSystem : ModuleRules
 			"GameplayTasks",
 			"AnimGraphRuntime",
 			"MotionWarping",
-			"NetCore"
+			"NetCore",
+			"PhysicsCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });

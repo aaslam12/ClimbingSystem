@@ -62,7 +62,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual float GetMaxSpeed() const override;
 	virtual bool CanAttemptJump() const override;
-	virtual bool DoJump(bool bReplayingMoves) override;
+	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
 	
 	/**
 	 * Override to prevent base class from interfering with in-place climbing animations.
@@ -82,8 +82,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Climbing|State")
 	EClimbingState PreviousClimbingState = EClimbingState::None;
 
-	/** Last validated detection result from server. Replicated for proxy IK. */
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Climbing|State")
+	/** Last validated detection result from server. Replicated for proxy IK. 
+	 *  Not BlueprintReadOnly - FClimbingDetectionResultNet is not BlueprintType (network struct only). */
+	UPROPERTY(Replicated)
 	FClimbingDetectionResultNet LastValidatedDetectionResult;
 
 	// ========================================================================

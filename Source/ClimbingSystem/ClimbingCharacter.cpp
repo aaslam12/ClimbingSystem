@@ -14,6 +14,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/StreamableManager.h"
+#include "Engine/AssetManager.h"
 
 // Static IK manager array - game thread access only
 TArray<TWeakObjectPtr<AClimbingCharacter>> AClimbingCharacter::ActiveClimbingCharacters;
@@ -257,17 +258,123 @@ void AClimbingCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 }
 
 // ============================================================================
-// Input Handlers (stubs - implementation in later milestones)
+// Input Handlers
 // ============================================================================
 
 void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 {
-	// Implementation in Milestone 7
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Handle coyote time re-grab
+	if (bEnableCoyoteTime && CoyoteTimeRemaining > 0.0f && ClimbingMovement->CurrentClimbingState == EClimbingState::None)
+	{
+		// Re-run detection
+		FClimbingDetectionResult DetectionResult = PerformLedgeDetection();
+		if (!DetectionResult.bValid)
+		{
+			DetectionResult = PerformLadderDetection();
+		}
+		
+		if (DetectionResult.bValid)
+		{
+			// Initiate grab
+			if (HasAuthority())
+			{
+				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ? 
+					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+			}
+			else
+			{
+				// Client prediction + server RPC
+				PrePredictionPosition = GetActorLocation();
+				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ? 
+					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+				Server_AttemptGrab(DetectionResult.ToNetResult());
+			}
+			CoyoteTimeRemaining = 0.0f;
+			return;
+		}
+	}
+
+	// Normal grab from ground/falling
+	if (ClimbingMovement->CurrentClimbingState == EClimbingState::None)
+	{
+		// Use cached detection result or re-run if falling
+		FClimbingDetectionResult DetectionResult = CurrentDetectionResult;
+		
+		if (ClimbingMovement->IsFalling())
+		{
+			// Re-run detection for falling grab
+			if (bEnableFallingGrab)
+			{
+				DetectionResult = PerformLedgeDetection();
+				if (!DetectionResult.bValid)
+				{
+					DetectionResult = PerformLadderDetection();
+				}
+			}
+		}
+		
+		if (DetectionResult.bValid)
+		{
+			// Initiate grab
+			if (HasAuthority())
+			{
+				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ? 
+					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+			}
+			else
+			{
+				// Client prediction + server RPC
+				PrePredictionPosition = GetActorLocation();
+				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ? 
+					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+				Server_AttemptGrab(DetectionResult.ToNetResult());
+			}
+		}
+	}
 }
 
 void AClimbingCharacter::Input_Drop(const FInputActionValue& Value)
 {
-	// Implementation in Milestone 7
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	
+	// Drop is valid from: Hanging, Shimmying, BracedWall, BracedShimmying, OnLadder
+	if (CurrentState == EClimbingState::Hanging ||
+		CurrentState == EClimbingState::Shimmying ||
+		CurrentState == EClimbingState::BracedWall ||
+		CurrentState == EClimbingState::BracedShimmying ||
+		CurrentState == EClimbingState::OnLadder)
+	{
+		if (!ClimbingMovement->CanInterruptCurrentState())
+		{
+			return;
+		}
+
+		// Enable coyote time
+		if (bEnableCoyoteTime)
+		{
+			CoyoteTimeRemaining = CoyoteTimeWindow;
+		}
+
+		if (HasAuthority())
+		{
+			TransitionToState(EClimbingState::DroppingDown, FClimbingDetectionResult());
+		}
+		else
+		{
+			TransitionToState(EClimbingState::DroppingDown, FClimbingDetectionResult());
+			Server_Drop();
+		}
+	}
 }
 
 void AClimbingCharacter::Input_Lache(const FInputActionValue& Value)
@@ -277,7 +384,46 @@ void AClimbingCharacter::Input_Lache(const FInputActionValue& Value)
 
 void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 {
-	// Implementation in Milestone 7
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	
+	// Climb up is valid from Hanging
+	if (CurrentState != EClimbingState::Hanging)
+	{
+		return;
+	}
+
+	if (!ClimbingMovement->CanInterruptCurrentState())
+	{
+		return;
+	}
+
+	// Check clearance from current detection result
+	const EClimbClearanceType Clearance = CurrentDetectionResult.ClearanceType;
+	
+	if (Clearance == EClimbClearanceType::None)
+	{
+		// Cannot climb up - no clearance
+		return;
+	}
+
+	const EClimbingState ClimbUpState = (Clearance == EClimbClearanceType::Full) ? 
+		EClimbingState::ClimbingUp : EClimbingState::ClimbingUpCrouch;
+
+	if (HasAuthority())
+	{
+		TransitionToState(ClimbUpState, CurrentDetectionResult);
+	}
+	else
+	{
+		PrePredictionPosition = GetActorLocation();
+		TransitionToState(ClimbUpState, CurrentDetectionResult);
+		Server_AttemptClimbUp();
+	}
 }
 
 void AClimbingCharacter::Input_ClimbMove(const FInputActionValue& Value)
@@ -318,22 +464,339 @@ void AClimbingCharacter::Input_CrouchCompleted(const FInputActionValue& Value)
 }
 
 // ============================================================================
-// State Management (stubs - implementation in later milestones)
+// State Management
 // ============================================================================
 
 void AClimbingCharacter::TransitionToState(EClimbingState NewState, const FClimbingDetectionResult& DetectionResult)
 {
-	// Implementation in Milestone 7a
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState OldState = ClimbingMovement->CurrentClimbingState;
+
+	// Validate transition
+	if (!ClimbingMovement->IsValidStateTransition(NewState))
+	{
+		UE_LOG(LogClimbing, Verbose, TEXT("ClimbingCharacter '%s': Invalid transition from %s to %s"),
+			*GetName(),
+			*UEnum::GetValueAsString(OldState),
+			*UEnum::GetValueAsString(NewState));
+		return;
+	}
+
+	// Exit old state
+	OnStateExit(OldState);
+
+	// Update state in movement component (handles replication)
+	ClimbingMovement->SetClimbingState(NewState);
+
+	// Store detection result
+	CurrentDetectionResult = DetectionResult;
+
+	// Enter new state
+	OnStateEnter(NewState, DetectionResult);
+
+	// Update animation instance
+	if (UClimbingAnimInstance* AnimInstance = CachedAnimInstance.Get())
+	{
+		AnimInstance->PreviousClimbingState = OldState;
+		AnimInstance->CurrentClimbingState = NewState;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan,
+			FString::Printf(TEXT("State: %s -> %s"),
+				*UEnum::GetValueAsString(OldState),
+				*UEnum::GetValueAsString(NewState)));
+	}
+#endif
 }
 
 void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDetectionResult& DetectionResult)
 {
-	// Implementation in Milestone 7a
+	// Handle IMC on first climbing state entry
+	if (ClimbingMovement && ClimbingMovement->PreviousClimbingState == EClimbingState::None && NewState != EClimbingState::None)
+	{
+		AddClimbingInputMappingContext();
+	}
+
+	// Update capsule for climbing states
+	if (NewState != EClimbingState::None && NewState != EClimbingState::Ragdoll)
+	{
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			Capsule->SetCapsuleSize(ClimbingCapsuleRadius, ClimbingCapsuleHalfHeight);
+			Capsule->SetCollisionProfileName(ClimbingCollisionProfile);
+		}
+	}
+
+	// Update surface data and animation override
+	if (DetectionResult.bValid && DetectionResult.HitComponent.IsValid())
+	{
+		CurrentSurfaceData = GetSurfaceDataFromComponent(DetectionResult.HitComponent.Get());
+		
+		// Load animation set override if present
+		if (CurrentSurfaceData.IsValid() && CurrentSurfaceData->AnimationSetOverride.ToSoftObjectPath().IsValid())
+		{
+			// Async load the animation set
+			FStreamableManager& StreamableManager = UAssetManager::GetStreamableManager();
+			StreamableManager.RequestAsyncLoad(
+				CurrentSurfaceData->AnimationSetOverride.ToSoftObjectPath(),
+				FStreamableDelegate::CreateWeakLambda(this, [this]()
+				{
+					if (CurrentSurfaceData.IsValid())
+					{
+						CurrentAnimationSetOverride = CurrentSurfaceData->AnimationSetOverride.Get();
+					}
+				})
+			);
+		}
+		else
+		{
+			CurrentAnimationSetOverride = nullptr;
+		}
+
+		// Set up anchor
+		if (ClimbingMovement)
+		{
+			ClimbingMovement->SetAnchor(DetectionResult.HitComponent.Get(), DetectionResult.LedgePosition);
+		}
+	}
+
+	// State-specific entry logic
+	switch (NewState)
+	{
+	case EClimbingState::Hanging:
+		{
+			// Reset shimmy distance tracker
+			ContinuousShimmyDistance = 0.0f;
+			CommittedShimmyDir = 0.0f;
+			IdleTimer = 0.0f;
+			
+			// Play grab animation if coming from None
+			if (ClimbingMovement && ClimbingMovement->PreviousClimbingState == EClimbingState::None)
+			{
+				if (UAnimMontage* GrabMontage = GetMontageForSlot(EClimbingAnimationSlot::GrabLedge))
+				{
+					PlayAnimMontage(GrabMontage);
+					
+					// Set up motion warp target
+					if (MotionWarping && DetectionResult.bValid)
+					{
+						FMotionWarpingTarget WarpTarget;
+						WarpTarget.Name = FName("WarpTarget_LedgeGrab");
+						WarpTarget.Location = DetectionResult.LedgePosition;
+						WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+						MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+					}
+				}
+			}
+			else
+			{
+				// Play idle animation
+				if (UAnimMontage* IdleMontage = GetMontageForSlot(EClimbingAnimationSlot::HangIdle))
+				{
+					PlayAnimMontage(IdleMontage);
+				}
+			}
+
+			// Start idle variation timer
+			if (GetWorld())
+			{
+				GetWorld()->GetTimerManager().SetTimer(
+					IdleVariationTimerHandle,
+					[this]()
+					{
+						PlayIdleVariation();
+					},
+					IdleVariationDelay,
+					false  // No loop - reset in variation callback
+				);
+			}
+		}
+		break;
+
+	case EClimbingState::OnLadder:
+		{
+			// Play enter animation based on entry direction
+			// For now, assume bottom entry
+			if (UAnimMontage* EnterMontage = GetMontageForSlot(EClimbingAnimationSlot::LadderEnterBottom))
+			{
+				PlayAnimMontage(EnterMontage);
+				
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_LadderEnterBottom");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+		}
+		break;
+
+	case EClimbingState::BracedWall:
+		{
+			ContinuousShimmyDistance = 0.0f;
+			CommittedShimmyDir = 0.0f;
+			
+			if (UAnimMontage* BracedIdleMontage = GetMontageForSlot(EClimbingAnimationSlot::BracedIdle))
+			{
+				PlayAnimMontage(BracedIdleMontage);
+			}
+
+			// SetBase is called in SetAnchor for braced states
+		}
+		break;
+
+	case EClimbingState::DroppingDown:
+		{
+			if (UAnimMontage* DropMontage = GetMontageForSlot(EClimbingAnimationSlot::DropDown))
+			{
+				PlayAnimMontage(DropMontage);
+			}
+		}
+		break;
+
+	case EClimbingState::Ragdoll:
+		{
+			// Enable ragdoll physics
+			if (USkeletalMeshComponent* MeshComp = GetMesh())
+			{
+				MeshComp->SetSimulatePhysics(true);
+				MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			}
+
+			// Disable capsule collision during ragdoll
+			if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+			{
+				Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			}
+
+			// Release camera lock and attach to pelvis
+			ReleaseCameraLock(0.1f);
+			if (CameraBoom)
+			{
+				CameraBoom->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, RagdollCameraTargetSocket);
+			}
+
+			// Set up recovery timer
+			// bIgnorePause = false (default) - climbing system fully pauses with game
+			if (GetWorld())
+			{
+				GetWorld()->GetTimerManager().SetTimer(
+					RagdollRecoveryTimerHandle,
+					[this]()
+					{
+						RecoverFromRagdoll();
+					},
+					RagdollRecoveryTime,
+					false  // No loop
+				);
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	// Update animation instance with surface data
+	if (UClimbingAnimInstance* AnimInstance = CachedAnimInstance.Get())
+	{
+		if (DetectionResult.bValid)
+		{
+			AnimInstance->CurrentSurfaceNormal = DetectionResult.SurfaceNormal;
+			AnimInstance->CurrentLedgePosition = DetectionResult.LedgePosition;
+		}
+	}
+
+	// Play appropriate sound
+	if (NewState == EClimbingState::Hanging || NewState == EClimbingState::BracedWall)
+	{
+		PlayClimbingSound(EClimbSoundType::HandGrab);
+	}
 }
 
 void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 {
-	// Implementation in Milestone 7a
+	// Handle IMC on climbing exit
+	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None && OldState == EClimbingState::None)
+	{
+		// This case shouldn't happen - we're entering climbing, not exiting
+	}
+
+	// Clear timers
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(IdleVariationTimerHandle);
+	}
+
+	// State-specific exit logic
+	switch (OldState)
+	{
+	case EClimbingState::Hanging:
+	case EClimbingState::Shimmying:
+	case EClimbingState::BracedWall:
+	case EClimbingState::BracedShimmying:
+	case EClimbingState::OnLadder:
+		{
+			// Clear SetBase if transitioning to non-climbing state
+			EClimbingState NewState = ClimbingMovement ? ClimbingMovement->CurrentClimbingState : EClimbingState::None;
+			if (NewState == EClimbingState::None || NewState == EClimbingState::DroppingDown)
+			{
+				SetBase(nullptr);
+				
+				// Clear anchor
+				if (ClimbingMovement)
+				{
+					ClimbingMovement->ClearAnchor();
+				}
+			}
+		}
+		break;
+
+	case EClimbingState::Ragdoll:
+		{
+			// Re-attach camera to root
+			if (CameraBoom)
+			{
+				CameraBoom->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+			}
+
+			// Re-enable capsule
+			if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+			{
+				Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	// If exiting all climbing, restore capsule
+	EClimbingState NewState = ClimbingMovement ? ClimbingMovement->CurrentClimbingState : EClimbingState::None;
+	if (NewState == EClimbingState::None)
+	{
+		RemoveClimbingInputMappingContext();
+
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			Capsule->SetCapsuleSize(OriginalCapsuleRadius, OriginalCapsuleHalfHeight);
+			Capsule->SetCollisionProfileName(OriginalCollisionProfile);
+		}
+
+		// Clear surface data
+		CurrentSurfaceData.Reset();
+		CurrentAnimationSetOverride = nullptr;
+	}
 }
 
 void AClimbingCharacter::TickClimbingState(float DeltaTime)
@@ -1046,4 +1509,332 @@ void AClimbingCharacter::Client_RejectStateTransition_Implementation()
 void AClimbingCharacter::Client_ConfirmStateTransition_Implementation(EClimbingState ConfirmedState)
 {
 	// Implementation in Milestone 13
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+void AClimbingCharacter::PlayIdleVariation()
+{
+	if (!ClimbingMovement || ClimbingMovement->CurrentClimbingState != EClimbingState::Hanging)
+	{
+		return;
+	}
+
+	// Build pool of available variations
+	TArray<int32> AvailableIndices;
+	
+	// Add HangIdleLeft (index 0) and HangIdleRight (index 1) if they exist
+	if (HangIdleLeft) AvailableIndices.Add(0);
+	if (HangIdleRight) AvailableIndices.Add(1);
+	
+	// Add custom variations
+	for (int32 i = 0; i < HangIdleVariations.Num(); ++i)
+	{
+		if (HangIdleVariations[i])
+		{
+			AvailableIndices.Add(i + 2); // Offset by 2 for Left/Right
+		}
+	}
+
+	if (AvailableIndices.Num() == 0)
+	{
+		// No variations available, reschedule timer
+		if (GetWorld())
+		{
+			GetWorld()->GetTimerManager().SetTimer(
+				IdleVariationTimerHandle,
+				[this]() { PlayIdleVariation(); },
+				IdleVariationDelay,
+				false
+			);
+		}
+		return;
+	}
+
+	// Remove last played if preventing repeats
+	if (bPreventConsecutiveVariationRepeat && LastIdleVariationIndex >= 0)
+	{
+		AvailableIndices.Remove(LastIdleVariationIndex);
+	}
+
+	if (AvailableIndices.Num() == 0)
+	{
+		// Only one variation and we can't repeat - play default
+		if (UAnimMontage* IdleMontage = GetMontageForSlot(EClimbingAnimationSlot::HangIdle))
+		{
+			PlayAnimMontage(IdleMontage, 1.0f, NAME_None);
+		}
+		LastIdleVariationIndex = -1;
+	}
+	else
+	{
+		// Select random variation
+		const int32 RandomIndex = FMath::RandRange(0, AvailableIndices.Num() - 1);
+		const int32 VariationIndex = AvailableIndices[RandomIndex];
+		LastIdleVariationIndex = VariationIndex;
+
+		UAnimMontage* VariationMontage = nullptr;
+		if (VariationIndex == 0)
+		{
+			VariationMontage = HangIdleLeft;
+		}
+		else if (VariationIndex == 1)
+		{
+			VariationMontage = HangIdleRight;
+		}
+		else if (VariationIndex - 2 < HangIdleVariations.Num())
+		{
+			VariationMontage = HangIdleVariations[VariationIndex - 2];
+		}
+
+		if (VariationMontage)
+		{
+			PlayAnimMontage(VariationMontage, 1.0f, NAME_None);
+		}
+	}
+
+	// Reschedule timer
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			IdleVariationTimerHandle,
+			[this]() { PlayIdleVariation(); },
+			IdleVariationDelay,
+			false
+		);
+	}
+}
+
+void AClimbingCharacter::RecoverFromRagdoll()
+{
+	if (!ClimbingMovement || ClimbingMovement->CurrentClimbingState != EClimbingState::Ragdoll)
+	{
+		return;
+	}
+
+	// Determine face up or face down using pelvis up-vector dot world up
+	// Do NOT use pelvis Z rotation - ambiguous on skeletons with non-trivial reference pose
+	bool bFaceUp = false;
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		const FQuat PelvisQuat = MeshComp->GetBoneQuaternion(PelvisBoneName, EBoneSpaces::WorldSpace);
+		const FVector PelvisUp = PelvisQuat.GetUpVector();
+		bFaceUp = FVector::DotProduct(PelvisUp, FVector::UpVector) > 0.0f;
+	}
+
+	// Disable physics
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		// Get pelvis location before disabling physics for positioning
+		const FVector PelvisLocation = MeshComp->GetBoneLocation(PelvisBoneName);
+		
+		MeshComp->SetSimulatePhysics(false);
+		MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		
+		// Position character at pelvis location
+		SetActorLocation(PelvisLocation + FVector::UpVector * OriginalCapsuleHalfHeight);
+	}
+
+	// Select and play get-up animation
+	const EClimbingAnimationSlot GetUpSlot = bFaceUp ? 
+		EClimbingAnimationSlot::RagdollGetUpFaceUp : 
+		EClimbingAnimationSlot::RagdollGetUpFaceDown;
+	
+	if (UAnimMontage* GetUpMontage = GetMontageForSlot(GetUpSlot))
+	{
+		PlayAnimMontage(GetUpMontage);
+	}
+
+	// Update animation instance
+	if (UClimbingAnimInstance* AnimInstance = CachedAnimInstance.Get())
+	{
+		AnimInstance->bRagdollFaceUp = bFaceUp;
+	}
+
+	// Transition to None state
+	FClimbingDetectionResult EmptyResult;
+	TransitionToState(EClimbingState::None, EmptyResult);
+}
+
+FClimbingDetectionResult AClimbingCharacter::PerformCornerDetection(float ShimmyDirection) const
+{
+	FClimbingDetectionResult Result;
+
+	if (!GetWorld() || FMath::IsNearlyZero(ShimmyDirection))
+	{
+		return Result;
+	}
+
+	const FVector CharacterLocation = GetActorLocation();
+	const FVector ForwardVector = GetActorForwardVector();
+	const FVector RightVector = GetActorRightVector();
+	const FVector UpVector = FVector::UpVector;
+
+	// Direction to trace (left or right)
+	const FVector TraceDirection = RightVector * FMath::Sign(ShimmyDirection);
+
+	// Collision query parameters
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = false;
+
+	// Trace to the side to find corner
+	const FVector SideTraceStart = CharacterLocation + UpVector * OriginalCapsuleHalfHeight * 0.5f;
+	const FVector SideTraceEnd = SideTraceStart + TraceDirection * LedgeDetectionForwardReach;
+
+	FHitResult SideHit;
+	bool bSideHit = GetWorld()->SweepSingleByChannel(
+		SideHit,
+		SideTraceStart,
+		SideTraceEnd,
+		FQuat::Identity,
+		ECC_WorldStatic,
+		FCollisionShape::MakeSphere(LedgeDetectionRadius),
+		QueryParams
+	);
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug)
+	{
+		DrawDebugLine(GetWorld(), SideTraceStart, SideTraceEnd, bSideHit ? FColor::Blue : FColor::Red, false, 0.1f);
+	}
+#endif
+
+	if (!bSideHit)
+	{
+		// No wall to the side - check if this is an outside corner
+		// Trace forward from the side position
+		const FVector OutsideCornerStart = SideTraceEnd;
+		const FVector OutsideCornerEnd = OutsideCornerStart + ForwardVector * LedgeDetectionForwardReach;
+
+		FHitResult OutsideHit;
+		bool bOutsideHit = GetWorld()->SweepSingleByChannel(
+			OutsideHit,
+			OutsideCornerStart,
+			OutsideCornerEnd,
+			FQuat::Identity,
+			ECC_WorldStatic,
+			FCollisionShape::MakeSphere(LedgeDetectionRadius),
+			QueryParams
+		);
+
+#if !UE_BUILD_SHIPPING
+		if (bDrawDebug)
+		{
+			DrawDebugLine(GetWorld(), OutsideCornerStart, OutsideCornerEnd, bOutsideHit ? FColor::Blue : FColor::Yellow, false, 0.1f);
+		}
+#endif
+
+		if (bOutsideHit && OutsideHit.Component.IsValid())
+		{
+			// Found outside corner
+			// Check angle between current normal and new normal
+			const float Dot = FVector::DotProduct(CurrentDetectionResult.SurfaceNormal, OutsideHit.ImpactNormal);
+			const float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(Dot));
+
+			if (AngleDeg >= CornerAngleThreshold)
+			{
+				// Valid corner transition
+				Result.LedgePosition = OutsideHit.ImpactPoint;
+				Result.SurfaceNormal = OutsideHit.ImpactNormal;
+				Result.SurfaceTier = CurrentDetectionResult.SurfaceTier; // Maintain tier
+				Result.ClearanceType = CurrentDetectionResult.ClearanceType;
+				Result.HitComponent = OutsideHit.Component;
+				Result.bValid = true;
+			}
+		}
+	}
+	else
+	{
+		// Wall to the side - check if this is an inside corner
+		// Check angle between current normal and side wall normal
+		const float Dot = FVector::DotProduct(CurrentDetectionResult.SurfaceNormal, SideHit.ImpactNormal);
+		const float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(Dot));
+
+		if (AngleDeg >= CornerAngleThreshold)
+		{
+			// Valid inside corner
+			Result.LedgePosition = SideHit.ImpactPoint;
+			Result.SurfaceNormal = SideHit.ImpactNormal;
+			Result.SurfaceTier = CurrentDetectionResult.SurfaceTier;
+			Result.ClearanceType = CurrentDetectionResult.ClearanceType;
+			Result.HitComponent = SideHit.Component;
+			Result.bValid = true;
+		}
+	}
+
+	return Result;
+}
+
+bool AClimbingCharacter::CheckForLipAbove(FClimbingDetectionResult& OutLedgeResult) const
+{
+	if (!GetWorld())
+	{
+		return false;
+	}
+
+	const FVector CharacterLocation = GetActorLocation();
+	const FVector ForwardVector = GetActorForwardVector();
+	const FVector UpVector = FVector::UpVector;
+
+	// Collision query parameters
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = false;
+
+	// Trace upward from current position
+	const FVector UpTraceStart = CharacterLocation + ForwardVector * MinLedgeDepth;
+	const FVector UpTraceEnd = UpTraceStart + UpVector * LedgeDetectionVerticalReach;
+
+	FHitResult UpHit;
+	bool bUpHit = GetWorld()->SweepSingleByChannel(
+		UpHit,
+		UpTraceStart,
+		UpTraceEnd,
+		FQuat::Identity,
+		ECC_WorldStatic,
+		FCollisionShape::MakeSphere(LedgeDetectionRadius),
+		QueryParams
+	);
+
+	if (bUpHit)
+	{
+		// Blocked above - no lip
+		return false;
+	}
+
+	// Trace down from above to find ledge top
+	const FVector DownTraceStart = UpTraceEnd;
+	const FVector DownTraceEnd = UpTraceStart;
+
+	FHitResult DownHit;
+	bool bDownHit = GetWorld()->SweepSingleByChannel(
+		DownHit,
+		DownTraceStart,
+		DownTraceEnd,
+		FQuat::Identity,
+		ECC_WorldStatic,
+		FCollisionShape::MakeSphere(LedgeDetectionRadius),
+		QueryParams
+	);
+
+	if (bDownHit)
+	{
+		// Check if it's a horizontal surface (ledge top)
+		const float LedgeTopAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(DownHit.ImpactNormal, UpVector)));
+		if (LedgeTopAngle <= MaxClimbableSurfaceAngle)
+		{
+			OutLedgeResult.LedgePosition = DownHit.ImpactPoint;
+			OutLedgeResult.SurfaceNormal = CurrentDetectionResult.SurfaceNormal; // Use wall normal
+			OutLedgeResult.SurfaceTier = CurrentDetectionResult.SurfaceTier;
+			OutLedgeResult.ClearanceType = EClimbClearanceType::Full; // Check clearance properly if needed
+			OutLedgeResult.HitComponent = DownHit.Component.IsValid() ? DownHit.Component : CurrentDetectionResult.HitComponent;
+			OutLedgeResult.bValid = true;
+			return true;
+		}
+	}
+
+	return false;
 }

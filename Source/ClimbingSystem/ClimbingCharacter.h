@@ -761,10 +761,11 @@ public:
 
 	/**
 	 * Resolves HitComponent from a replicated network detection result.
+	 * Casts a short sphere trace from LedgePosition inward along the negated SurfaceNormal.
+	 * Cannot be BlueprintCallable since FClimbingDetectionResultNet is not BlueprintType.
 	 * @param NetResult The network-safe detection result to resolve
 	 * @return The resolved primitive component, or null if trace fails
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Climbing|Detection")
 	UPrimitiveComponent* ResolveHitComponentFromNet(const FClimbingDetectionResultNet& NetResult) const;
 
 	// ========================================================================
@@ -1017,6 +1018,22 @@ protected:
 
 	/** Simulated proxy IK update accumulator. */
 	float SimulatedProxyIKAccumulator = 0.0f;
+
+	// ========================================================================
+	// Additional Helper Functions
+	// ========================================================================
+
+	/** Plays a random idle variation montage. */
+	void PlayIdleVariation();
+
+	/** Recovers from ragdoll state. */
+	void RecoverFromRagdoll();
+
+	/** Performs corner detection in shimmy direction. */
+	FClimbingDetectionResult PerformCornerDetection(float ShimmyDirection) const;
+
+	/** Checks for lip/ledge above current braced position. */
+	bool CheckForLipAbove(FClimbingDetectionResult& OutLedgeResult) const;
 
 	// ========================================================================
 	// Static IK Manager
