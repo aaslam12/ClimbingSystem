@@ -105,12 +105,15 @@ void AClimbingCharacter::BeginPlay()
 
 void AClimbingCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// Dual-unregister in EndPlay AND Destroyed handles multiplayer edge cases
+	// where destruction order varies (seamless travel, client disconnect, etc.)
 	PerformCleanup();
 	Super::EndPlay(EndPlayReason);
 }
 
 void AClimbingCharacter::Destroyed()
 {
+	// Dual-unregister in EndPlay AND Destroyed handles multiplayer edge cases
 	PerformCleanup();
 	Super::Destroyed();
 }
