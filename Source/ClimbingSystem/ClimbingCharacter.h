@@ -993,6 +993,15 @@ protected:
 	/** Pre-prediction position for rollback. */
 	FVector PrePredictionPosition = FVector::ZeroVector;
 
+	/** Lache launch position (origin of arc). */
+	FVector LacheLaunchPosition = FVector::ZeroVector;
+
+	/** Lache launch direction (forward at launch). */
+	FVector LacheLaunchDirection = FVector::ZeroVector;
+
+	/** Time in flight during Lache. */
+	float LacheFlightTime = 0.0f;
+
 	/** Whether camera is currently locked. */
 	bool bCameraLocked = false;
 
@@ -1045,6 +1054,12 @@ protected:
 
 	/** Checks for lip/ledge above current braced position. */
 	bool CheckForLipAbove(FClimbingDetectionResult& OutLedgeResult) const;
+
+	/** Calculates Lache arc and finds valid target. */
+	FClimbingDetectionResult CalculateLacheArc() const;
+
+	/** Performs ledge detection centered at a specific location (for Lache targeting). */
+	FClimbingDetectionResult PerformLedgeDetectionAtLocation(const FVector& Location) const;
 
 	// ========================================================================
 	// Static IK Manager

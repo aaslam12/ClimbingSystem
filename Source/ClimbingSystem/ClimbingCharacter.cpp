@@ -379,7 +379,271 @@ void AClimbingCharacter::Input_Drop(const FInputActionValue& Value)
 
 void AClimbingCharacter::Input_Lache(const FInputActionValue& Value)
 {
-	// Implementation in Milestone 7c
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+
+	// Lache is valid from Hanging only
+	if (CurrentState != EClimbingState::Hanging)
+	{
+		return;
+	}
+
+	if (!ClimbingMovement->CanInterruptCurrentState())
+	{
+		return;
+	}
+
+	// Calculate Lache arc and check for valid target
+	FClimbingDetectionResult LacheTarget = CalculateLacheArc();
+	
+	if (!LacheTarget.bValid)
+	{
+		// No valid target - play grunt but don't launch
+		PlayClimbingSound(EClimbSoundType::LacheLaunchGrunt);
+		
+#if !UE_BUILD_SHIPPING
+		if (bDrawDebug)
+		{
+			UE_LOG(LogClimbing, Log, TEXT("Lache: No valid target found"));
+		}
+#endif
+		return;
+	}
+
+	// Lock target and initiate Lache
+	LockedLacheTarget = LacheTarget;
+	LacheLaunchPosition = GetActorLocation();
+	LacheLaunchDirection = GetActorForwardVector();
+	LacheFlightTime = 0.0f;
+
+	// Auto-cinematic camera if enabled and target far enough
+	if (bAutoLacheCinematic)
+	{
+		const float DistanceToTarget = FVector::Dist(GetActorLocation(), LacheTarget.LedgePosition);
+		if (DistanceToTarget >= LacheCinematicDistanceThreshold)
+		{
+			// Calculate cinematic camera position
+			const FVector CameraLocation = (GetActorLocation() + LacheTarget.LedgePosition) * 0.5f + FVector(0.f, 0.f, 200.f);
+			const FRotator CameraRotation = (LacheTarget.LedgePosition - CameraLocation).Rotation();
+			LockCameraToFrame(CameraLocation, CameraRotation, 0.3f);
+		}
+	}
+
+	if (HasAuthority())
+	{
+		TransitionToState(EClimbingState::Lache, LacheTarget);
+	}
+	else
+	{
+		PrePredictionPosition = GetActorLocation();
+		TransitionToState(EClimbingState::Lache, LacheTarget);
+		Server_AttemptLache(LacheTarget.LedgePosition);
+	}
+}
+
+FClimbingDetectionResult AClimbingCharacter::CalculateLacheArc() const
+{
+	FClimbingDetectionResult Result;
+
+	if (!GetWorld() || !ClimbingMovement)
+	{
+		return Result;
+	}
+
+	const FVector LaunchOrigin = GetActorLocation();
+	const FVector ArcVelocity = GetActorForwardVector() * LacheLaunchSpeed;
+	const float GravityZ = ClimbingMovement->GetGravityZ(); // Negative value - use directly, do not Abs
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = false;
+
+	FVector PrevPos = LaunchOrigin;
+
+	// Trace along arc
+	for (int32 i = 1; i <= LacheArcTraceSteps; ++i)
+	{
+		const float t = i * (LacheTotalArcTime / LacheArcTraceSteps);
+		const FVector StepPos = LaunchOrigin
+			+ ArcVelocity * t
+			+ FVector(0.f, 0.f, 0.5f * GravityZ * t * t);
+
+		FHitResult Hit;
+		bool bHit = GetWorld()->SweepSingleByChannel(
+			Hit,
+			PrevPos,
+			StepPos,
+			FQuat::Identity,
+			ECC_WorldStatic,
+			FCollisionShape::MakeSphere(LacheArcTraceRadius),
+			QueryParams
+		);
+
+#if !UE_BUILD_SHIPPING
+		if (bDrawDebug)
+		{
+			DrawDebugLine(GetWorld(), PrevPos, StepPos, bHit ? FColor::Yellow : FColor::Cyan, false, 0.5f);
+		}
+#endif
+
+		if (bHit && Hit.Component.IsValid())
+		{
+			// Check if this is a climbable surface
+			const UClimbingSurfaceData* SurfaceData = GetSurfaceDataFromComponent(Hit.Component.Get());
+			
+			// Determine surface tier
+			EClimbSurfaceTier Tier = EClimbSurfaceTier::Untagged;
+			if (SurfaceData)
+			{
+				Tier = SurfaceData->SurfaceTier;
+			}
+			else if (Hit.Component->ComponentHasTag(FName("Climbable")))
+			{
+				Tier = EClimbSurfaceTier::Climbable;
+			}
+			else if (Hit.Component->ComponentHasTag(FName("Unclimbable")))
+			{
+				// Obstacle in path - cannot Lache
+				return Result;
+			}
+
+			// Final step or climbable surface hit
+			if (i == LacheArcTraceSteps || Tier == EClimbSurfaceTier::Climbable || Tier == EClimbSurfaceTier::Untagged)
+			{
+				// Check for ledge near impact point
+				FClimbingDetectionResult LedgeCheck = PerformLedgeDetectionAtLocation(Hit.ImpactPoint);
+				if (LedgeCheck.bValid)
+				{
+					return LedgeCheck;
+				}
+			}
+
+			// Blocked by non-climbable - fail
+			if (Tier == EClimbSurfaceTier::Unclimbable)
+			{
+				return Result;
+			}
+		}
+
+		PrevPos = StepPos;
+	}
+
+	return Result;
+}
+
+FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetectionAtLocation(const FVector& Location) const
+{
+	FClimbingDetectionResult Result;
+
+	if (!GetWorld())
+	{
+		return Result;
+	}
+
+	// Similar to PerformLedgeDetection but centered at the specified location
+	const FVector UpVector = FVector::UpVector;
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = false;
+	QueryParams.bReturnPhysicalMaterial = true;
+
+	// Trace upward from location
+	const FVector UpTraceStart = Location;
+	const FVector UpTraceEnd = Location + UpVector * LedgeDetectionVerticalReach;
+
+	FHitResult UpHit;
+	bool bUpBlocked = GetWorld()->SweepSingleByChannel(
+		UpHit,
+		UpTraceStart,
+		UpTraceEnd,
+		FQuat::Identity,
+		ECC_WorldStatic,
+		FCollisionShape::MakeSphere(LedgeDetectionRadius),
+		QueryParams
+	);
+
+	if (bUpBlocked)
+	{
+		// Blocked above - use the hit point as reference
+		const FVector DownTraceStart = UpHit.ImpactPoint + UpVector * 10.0f;
+		const FVector DownTraceEnd = DownTraceStart - UpVector * (LedgeDetectionVerticalReach + 20.0f);
+
+		FHitResult DownHit;
+		bool bFoundLedge = GetWorld()->SweepSingleByChannel(
+			DownHit,
+			DownTraceStart,
+			DownTraceEnd,
+			FQuat::Identity,
+			ECC_WorldStatic,
+			FCollisionShape::MakeSphere(LedgeDetectionRadius),
+			QueryParams
+		);
+
+		if (bFoundLedge && DownHit.Component.IsValid())
+		{
+			Result.LedgePosition = DownHit.ImpactPoint;
+			Result.SurfaceNormal = DownHit.ImpactNormal;
+			Result.HitComponent = DownHit.Component;
+			Result.bValid = true;
+
+			// Determine surface tier
+			const UClimbingSurfaceData* SurfaceData = GetSurfaceDataFromComponent(DownHit.Component.Get());
+			if (SurfaceData)
+			{
+				Result.SurfaceTier = SurfaceData->SurfaceTier;
+			}
+			else
+			{
+				Result.SurfaceTier = EClimbSurfaceTier::Untagged;
+			}
+
+			Result.ClearanceType = EClimbClearanceType::Full; // Simplified for Lache
+		}
+	}
+	else
+	{
+		// Not blocked - trace down from above
+		const FVector DownTraceStart = UpTraceEnd;
+		const FVector DownTraceEnd = Location;
+
+		FHitResult DownHit;
+		bool bFoundLedge = GetWorld()->SweepSingleByChannel(
+			DownHit,
+			DownTraceStart,
+			DownTraceEnd,
+			FQuat::Identity,
+			ECC_WorldStatic,
+			FCollisionShape::MakeSphere(LedgeDetectionRadius),
+			QueryParams
+		);
+
+		if (bFoundLedge && DownHit.Component.IsValid())
+		{
+			Result.LedgePosition = DownHit.ImpactPoint;
+			Result.SurfaceNormal = DownHit.ImpactNormal;
+			Result.HitComponent = DownHit.Component;
+			Result.bValid = true;
+
+			const UClimbingSurfaceData* SurfaceData = GetSurfaceDataFromComponent(DownHit.Component.Get());
+			if (SurfaceData)
+			{
+				Result.SurfaceTier = SurfaceData->SurfaceTier;
+			}
+			else
+			{
+				Result.SurfaceTier = EClimbSurfaceTier::Untagged;
+			}
+
+			Result.ClearanceType = EClimbClearanceType::Full;
+		}
+	}
+
+	return Result;
 }
 
 void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
@@ -1110,12 +1374,160 @@ void AClimbingCharacter::TickBracedShimmyingState(float DeltaTime)
 
 void AClimbingCharacter::TickLadderState(float DeltaTime)
 {
-	// Implementation in Milestone 7c
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Get climb direction from input (Y axis)
+	const float ClimbInput = CurrentClimbMoveInput.Y;
+
+	if (FMath::IsNearlyZero(ClimbInput))
+	{
+		// No input - idle on ladder
+		return;
+	}
+
+	// Determine if fast ascent/descent
+	const bool bFastAscent = bSprintModifierActive && ClimbInput > 0.0f;
+	const bool bFastDescent = bCrouchModifierActive && ClimbInput < 0.0f;
+
+	// Get surface speed multiplier
+	float ClimbSpeedMultiplier = 1.0f;
+	if (CurrentSurfaceData.IsValid())
+	{
+		ClimbSpeedMultiplier = CurrentSurfaceData->ClimbSpeedMultiplier;
+	}
+
+	// Calculate effective speed
+	const float EffectiveSpeed = ClimbingMovement->CalculateEffectiveLadderSpeed(
+		bFastAscent, bFastDescent, ClimbSpeedMultiplier);
+
+	// Apply vertical movement
+	const float ClimbDirection = FMath::Sign(ClimbInput);
+	const FVector ClimbVelocity = FVector::UpVector * ClimbDirection * EffectiveSpeed;
+	
+	FVector NewLocation = GetActorLocation() + ClimbVelocity * DeltaTime;
+
+	// Check for ladder bounds (top/bottom exit)
+	FClimbingDetectionResult LadderResult = PerformLadderDetection();
+	if (!LadderResult.bValid)
+	{
+		// Lost ladder - check if we should exit
+		if (ClimbDirection > 0.0f)
+		{
+			// Moving up - check for ledge at top
+			FClimbingDetectionResult LedgeResult = PerformLedgeDetection();
+			if (LedgeResult.bValid)
+			{
+				TransitionToState(EClimbingState::LadderTransition, LedgeResult);
+				return;
+			}
+		}
+		else
+		{
+			// Moving down - exit at bottom
+			TransitionToState(EClimbingState::LadderTransition, FClimbingDetectionResult());
+			return;
+		}
+	}
+
+	SetActorLocation(NewLocation);
+
+	// Update animation montage based on movement
+	EClimbingAnimationSlot TargetSlot = EClimbingAnimationSlot::LadderIdle;
+	if (ClimbDirection > 0.0f)
+	{
+		TargetSlot = bFastAscent ? EClimbingAnimationSlot::LadderFastAscend : EClimbingAnimationSlot::LadderClimbUp;
+	}
+	else if (ClimbDirection < 0.0f)
+	{
+		TargetSlot = bFastDescent ? EClimbingAnimationSlot::LadderFastDescend : EClimbingAnimationSlot::LadderClimbDown;
+	}
+
+	// Update animation instance
+	if (UClimbingAnimInstance* AnimInst = CachedAnimInstance.Get())
+	{
+		AnimInst->LadderClimbDir = ClimbDirection;
+		AnimInst->bIsLadderSprinting = bFastAscent;
+		AnimInst->bIsLadderFastDescending = bFastDescent;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Green,
+			FString::Printf(TEXT("Ladder: Speed=%.1f Dir=%.0f Fast=%s"),
+				EffectiveSpeed, ClimbDirection, 
+				bFastAscent ? TEXT("Ascent") : (bFastDescent ? TEXT("Descent") : TEXT("None"))));
+	}
+#endif
 }
 
 void AClimbingCharacter::TickLacheInAirState(float DeltaTime)
 {
-	// Implementation in Milestone 7c
+	if (!ClimbingMovement || !LockedLacheTarget.bValid)
+	{
+		// No target - miss
+		TransitionToState(EClimbingState::LacheMiss, FClimbingDetectionResult());
+		return;
+	}
+
+	// Update flight time
+	LacheFlightTime += DeltaTime;
+
+	// Calculate expected position on arc
+	const FVector LaunchOrigin = LacheLaunchPosition;
+	const FVector ArcVelocity = LacheLaunchDirection * LacheLaunchSpeed;
+	const float GravityZ = ClimbingMovement->GetGravityZ(); // Negative value - use directly
+
+	const FVector ExpectedPosition = LaunchOrigin
+		+ ArcVelocity * LacheFlightTime
+		+ FVector(0.f, 0.f, 0.5f * GravityZ * LacheFlightTime * LacheFlightTime);
+
+	// Check if we've reached the target
+	const float DistanceToTarget = FVector::Dist(ExpectedPosition, LockedLacheTarget.LedgePosition);
+	
+	if (DistanceToTarget <= LacheArcTraceRadius * 2.0f)
+	{
+		// Close enough - catch
+		TransitionToState(EClimbingState::LacheCatch, LockedLacheTarget);
+		return;
+	}
+
+	// Check if we've exceeded flight time (missed)
+	if (LacheFlightTime >= LacheTotalArcTime)
+	{
+		TransitionToState(EClimbingState::LacheMiss, FClimbingDetectionResult());
+		return;
+	}
+
+	// Move character along arc
+	SetActorLocation(ExpectedPosition);
+
+	// Rotate to face target
+	const FVector DirectionToTarget = (LockedLacheTarget.LedgePosition - GetActorLocation()).GetSafeNormal();
+	if (!DirectionToTarget.IsNearlyZero())
+	{
+		const FRotator TargetRotation = DirectionToTarget.Rotation();
+		SetActorRotation(FRotator(0.0f, TargetRotation.Yaw, 0.0f));
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug)
+	{
+		// Draw arc and target
+		DrawDebugLine(GetWorld(), GetActorLocation(), LockedLacheTarget.LedgePosition, FColor::Yellow, false, 0.0f);
+		DrawDebugSphere(GetWorld(), LockedLacheTarget.LedgePosition, LacheArcTraceRadius, 8, FColor::Green, false, 0.0f);
+		
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Cyan,
+				FString::Printf(TEXT("Lache: Time=%.2f/%.2f Dist=%.1f"),
+					LacheFlightTime, LacheTotalArcTime, DistanceToTarget));
+		}
+	}
+#endif
 }
 
 void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
