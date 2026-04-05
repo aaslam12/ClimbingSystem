@@ -15,6 +15,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/StreamableManager.h"
 #include "Engine/AssetManager.h"
+#include "DrawDebugHelpers.h"
 
 // Static IK manager array - game thread access only
 TArray<TWeakObjectPtr<AClimbingCharacter>> AClimbingCharacter::ActiveClimbingCharacters;
@@ -185,6 +186,21 @@ void AClimbingCharacter::Tick(float DeltaTime)
 	{
 		CoyoteTimeRemaining -= DeltaTime;
 	}
+
+#if !UE_BUILD_SHIPPING
+	// Freefall grab window visualization (shoulder-height sphere)
+	if (bDrawDebug && bEnableFallingGrab && ClimbingMovement && ClimbingMovement->IsFalling())
+	{
+		// Draw the reach window sphere at shoulder height
+		const FVector ShoulderPosition = GetActorLocation() + FVector(0.0f, 0.0f, 60.0f); // Approximate shoulder height
+		DrawDebugSphere(GetWorld(), ShoulderPosition, FallingGrabReachDistance, 16, FColor::Magenta, false, 0.0f);
+		
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Magenta, TEXT("Freefall Grab Window Active"));
+		}
+	}
+#endif
 
 #if WITH_EDITOR
 	// Editor-only Lache arc preview
@@ -1215,12 +1231,33 @@ void AClimbingCharacter::TickClimbingState(float DeltaTime)
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug)
 	{
-		// Draw current state text
-		if (GEngine)
+		// Draw current + previous state text
+		if (GEngine && ClimbingMovement)
 		{
-			const FString StateText = FString::Printf(TEXT("Climbing State: %s | CommittedShimmyDir: %.1f"), 
-				*UEnum::GetValueAsString(CurrentState), CommittedShimmyDir);
+			const FString StateText = FString::Printf(TEXT("Climbing: %s (prev: %s) | ShimmyDir: %.1f"), 
+				*UEnum::GetValueAsString(CurrentState),
+				*UEnum::GetValueAsString(ClimbingMovement->PreviousClimbingState),
+				CommittedShimmyDir);
 			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::White, StateText);
+		}
+
+		// Draw anchor point (cyan)
+		if (ClimbingMovement && ClimbingMovement->AnchorComponent)
+		{
+			const FTransform WorldAnchor = ClimbingMovement->AnchorLocalTransform * ClimbingMovement->AnchorComponent->GetComponentTransform();
+			DrawDebugSphere(GetWorld(), WorldAnchor.GetLocation(), 12.0f, 8, FColor::Cyan, false, 0.0f);
+			DrawDebugDirectionalArrow(GetWorld(), WorldAnchor.GetLocation(), 
+				WorldAnchor.GetLocation() + WorldAnchor.GetRotation().GetForwardVector() * 30.0f,
+				8.0f, FColor::Cyan, false, 0.0f);
+		}
+
+		// Draw climbing capsule bounds (orange)
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+			const float Radius = Capsule->GetScaledCapsuleRadius();
+			DrawDebugCapsule(GetWorld(), Capsule->GetComponentLocation(), HalfHeight, Radius, 
+				Capsule->GetComponentQuat(), FColor::Orange, false, 0.0f);
 		}
 	}
 #endif
