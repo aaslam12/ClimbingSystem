@@ -801,7 +801,326 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 
 void AClimbingCharacter::TickClimbingState(float DeltaTime)
 {
-	// Implementation in Milestone 7b/7c
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+
+	// Update detection during active climbing states (every tick)
+	if (CurrentState == EClimbingState::Hanging ||
+		CurrentState == EClimbingState::Shimmying ||
+		CurrentState == EClimbingState::BracedWall ||
+		CurrentState == EClimbingState::BracedShimmying ||
+		CurrentState == EClimbingState::OnLadder)
+	{
+		CurrentDetectionResult = PerformLedgeDetection();
+		if (!CurrentDetectionResult.bValid)
+		{
+			CurrentDetectionResult = PerformLadderDetection();
+		}
+
+		// Owning client during active climbing: use local scan HitComponent directly
+		// Skip confirmation trace - it's only needed for simulated proxies
+	}
+
+	// State-specific tick logic
+	switch (CurrentState)
+	{
+	case EClimbingState::Hanging:
+		TickHangingState(DeltaTime);
+		break;
+
+	case EClimbingState::Shimmying:
+		TickShimmyingState(DeltaTime);
+		break;
+
+	case EClimbingState::BracedWall:
+		TickBracedWallState(DeltaTime);
+		break;
+
+	case EClimbingState::BracedShimmying:
+		TickBracedShimmyingState(DeltaTime);
+		break;
+
+	case EClimbingState::CornerTransition:
+		// Corner transition is montage-driven, no tick logic needed
+		break;
+
+	case EClimbingState::OnLadder:
+		TickLadderState(DeltaTime);
+		break;
+
+	case EClimbingState::LacheInAir:
+		TickLacheInAirState(DeltaTime);
+		break;
+
+	case EClimbingState::Ragdoll:
+		// Ragdoll is physics-driven, recovery handled by timer
+		break;
+
+	default:
+		break;
+	}
+
+	// Update IK if we have a valid detection result
+	if (CurrentDetectionResult.bValid)
+	{
+		UpdateClimbingIK(DeltaTime);
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug)
+	{
+		// Draw current state text
+		if (GEngine)
+		{
+			const FString StateText = FString::Printf(TEXT("Climbing State: %s | CommittedShimmyDir: %.1f"), 
+				*UEnum::GetValueAsString(CurrentState), CommittedShimmyDir);
+			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::White, StateText);
+		}
+	}
+#endif
+}
+
+void AClimbingCharacter::TickHangingState(float DeltaTime)
+{
+	// Check if player wants to shimmy (has movement input)
+	if (!FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		// Update committed shimmy direction with hysteresis
+		if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
+		{
+			CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
+		}
+
+		// Check for corner in shimmy direction
+		FClimbingDetectionResult CornerResult = PerformCornerDetection(CommittedShimmyDir);
+		if (CornerResult.bValid)
+		{
+			// Corner detected - determine inside/outside
+			const float Dot = FVector::DotProduct(CurrentDetectionResult.SurfaceNormal, CornerResult.SurfaceNormal);
+			bCurrentCornerIsInside = Dot > 0.0f;
+
+			// Transition to corner state
+			TransitionToState(EClimbingState::CornerTransition, CornerResult);
+			return;
+		}
+
+		// No corner - check if we can shimmy
+		if (CurrentDetectionResult.bValid)
+		{
+			TransitionToState(EClimbingState::Shimmying, CurrentDetectionResult);
+		}
+	}
+}
+
+void AClimbingCharacter::TickShimmyingState(float DeltaTime)
+{
+	// Get surface speed multiplier
+	float ClimbSpeedMultiplier = 1.0f;
+	if (CurrentSurfaceData.IsValid())
+	{
+		ClimbSpeedMultiplier = CurrentSurfaceData->ClimbSpeedMultiplier;
+	}
+
+	// Calculate effective shimmy speed
+	const float EffectiveSpeed = ClimbingMovement->CalculateEffectiveShimmySpeed(
+		CurrentDetectionResult.SurfaceNormal, ClimbSpeedMultiplier);
+
+	// Update committed direction with hysteresis
+	if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
+	{
+		CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
+	}
+
+	// Check if player released input (return to hanging)
+	if (FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		TransitionToState(EClimbingState::Hanging, CurrentDetectionResult);
+		return;
+	}
+
+	// Check for corner
+	FClimbingDetectionResult CornerResult = PerformCornerDetection(CommittedShimmyDir);
+	if (CornerResult.bValid)
+	{
+		const float Dot = FVector::DotProduct(CurrentDetectionResult.SurfaceNormal, CornerResult.SurfaceNormal);
+		bCurrentCornerIsInside = Dot > 0.0f;
+		TransitionToState(EClimbingState::CornerTransition, CornerResult);
+		return;
+	}
+
+	// Update continuous shimmy distance
+	ContinuousShimmyDistance += EffectiveSpeed * DeltaTime;
+
+	// Check shimmy reposition
+	if (MaxContinuousShimmyDistance > 0.0f && ContinuousShimmyDistance >= MaxContinuousShimmyDistance)
+	{
+		// Play reposition animation
+		if (UAnimMontage* RepositionMontage = GetMontageForSlot(EClimbingAnimationSlot::ShimmyReposition))
+		{
+			PlayAnimMontage(RepositionMontage);
+		}
+		ContinuousShimmyDistance = 0.0f;
+	}
+
+	// Apply movement
+	if (ClimbingMovement && EffectiveSpeed >= ShimmySpeedDeadzone)
+	{
+		// Calculate shimmy direction (perpendicular to wall normal, projected onto wall plane)
+		const FVector WallRight = FVector::CrossProduct(FVector::UpVector, CurrentDetectionResult.SurfaceNormal).GetSafeNormal();
+		const FVector ShimmyVelocity = WallRight * CommittedShimmyDir * EffectiveSpeed;
+
+		// Apply movement (in-place animation, movement component drives lateral)
+		FVector NewLocation = GetActorLocation() + ShimmyVelocity * DeltaTime;
+		SetActorLocation(NewLocation);
+
+		// Update montage playback rate based on speed
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			const float NormalizedSpeed = FMath::Clamp(EffectiveSpeed / ClimbingMovement->BaseShimmySpeed, 0.0f, 1.0f);
+			const float PlaybackRate = FMath::Lerp(ShimmyPlaybackRateMin, ShimmyPlaybackRateMax, NormalizedSpeed);
+			AnimInstance->Montage_SetPlayRate(GetCurrentMontage(), PlaybackRate);
+		}
+	}
+	else
+	{
+		// Speed below deadzone - pause montage
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			AnimInstance->Montage_SetPlayRate(GetCurrentMontage(), 0.0f);
+		}
+	}
+
+	// Update animation instance
+	if (UClimbingAnimInstance* AnimInst = CachedAnimInstance.Get())
+	{
+		AnimInst->NormalizedShimmySpeed = FMath::Clamp(EffectiveSpeed / ClimbingMovement->BaseShimmySpeed, 0.0f, 1.0f);
+		AnimInst->CommittedShimmyDir = CommittedShimmyDir;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, 
+			FString::Printf(TEXT("Shimmy: Speed=%.1f Dir=%.0f Dist=%.1f"), 
+				EffectiveSpeed, CommittedShimmyDir, ContinuousShimmyDistance));
+	}
+#endif
+}
+
+void AClimbingCharacter::TickBracedWallState(float DeltaTime)
+{
+	// Check for lip/ledge above to transition to hanging
+	FClimbingDetectionResult LedgeResult;
+	if (CheckForLipAbove(LedgeResult))
+	{
+		// Found ledge above - transition to braced-to-hang then hanging
+		TransitionToState(EClimbingState::Hanging, LedgeResult);
+		return;
+	}
+
+	// Check if player wants to shimmy
+	if (!FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
+		{
+			CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
+		}
+
+		// Re-run braced wall detection for new position
+		FClimbingDetectionResult BracedResult = PerformBracedWallDetection();
+		if (BracedResult.bValid)
+		{
+			TransitionToState(EClimbingState::BracedShimmying, BracedResult);
+		}
+	}
+}
+
+void AClimbingCharacter::TickBracedShimmyingState(float DeltaTime)
+{
+	// Get surface speed multiplier
+	float ClimbSpeedMultiplier = 1.0f;
+	if (CurrentSurfaceData.IsValid())
+	{
+		ClimbSpeedMultiplier = CurrentSurfaceData->ClimbSpeedMultiplier;
+	}
+
+	// Calculate effective shimmy speed (same as ledge shimmy)
+	const float EffectiveSpeed = ClimbingMovement->CalculateEffectiveShimmySpeed(
+		CurrentDetectionResult.SurfaceNormal, ClimbSpeedMultiplier);
+
+	// Update committed direction with hysteresis
+	if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
+	{
+		CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
+	}
+
+	// Check if player released input
+	if (FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		// Re-detect braced position
+		FClimbingDetectionResult BracedResult = PerformBracedWallDetection();
+		TransitionToState(EClimbingState::BracedWall, BracedResult.bValid ? BracedResult : CurrentDetectionResult);
+		return;
+	}
+
+	// Check for lip above (can transition to hanging while shimmying)
+	FClimbingDetectionResult LedgeResult;
+	if (CheckForLipAbove(LedgeResult))
+	{
+		TransitionToState(EClimbingState::Hanging, LedgeResult);
+		return;
+	}
+
+	// Apply movement
+	if (ClimbingMovement && EffectiveSpeed >= ShimmySpeedDeadzone)
+	{
+		const FVector WallRight = FVector::CrossProduct(FVector::UpVector, CurrentDetectionResult.SurfaceNormal).GetSafeNormal();
+		const FVector ShimmyVelocity = WallRight * CommittedShimmyDir * EffectiveSpeed;
+
+		FVector NewLocation = GetActorLocation() + ShimmyVelocity * DeltaTime;
+		SetActorLocation(NewLocation);
+
+		// Update playback rate
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			const float NormalizedSpeed = FMath::Clamp(EffectiveSpeed / ClimbingMovement->BaseShimmySpeed, 0.0f, 1.0f);
+			const float PlaybackRate = FMath::Lerp(ShimmyPlaybackRateMin, ShimmyPlaybackRateMax, NormalizedSpeed);
+			AnimInstance->Montage_SetPlayRate(GetCurrentMontage(), PlaybackRate);
+		}
+	}
+	else
+	{
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			AnimInstance->Montage_SetPlayRate(GetCurrentMontage(), 0.0f);
+		}
+	}
+
+	// Update animation instance
+	if (UClimbingAnimInstance* AnimInst = CachedAnimInstance.Get())
+	{
+		AnimInst->NormalizedShimmySpeed = FMath::Clamp(EffectiveSpeed / ClimbingMovement->BaseShimmySpeed, 0.0f, 1.0f);
+		AnimInst->CommittedShimmyDir = CommittedShimmyDir;
+	}
+}
+
+void AClimbingCharacter::TickLadderState(float DeltaTime)
+{
+	// Implementation in Milestone 7c
+}
+
+void AClimbingCharacter::TickLacheInAirState(float DeltaTime)
+{
+	// Implementation in Milestone 7c
+}
+
+void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
+{
+	// Implementation in Milestone 8
 }
 
 void AClimbingCharacter::OnClimbingStateReplicated(EClimbingState OldState, EClimbingState NewState)

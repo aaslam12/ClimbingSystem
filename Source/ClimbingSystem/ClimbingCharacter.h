@@ -876,6 +876,17 @@ protected:
 	/** Handles state-specific tick logic. */
 	void TickClimbingState(float DeltaTime);
 
+	/** Per-state tick functions. */
+	void TickHangingState(float DeltaTime);
+	void TickShimmyingState(float DeltaTime);
+	void TickBracedWallState(float DeltaTime);
+	void TickBracedShimmyingState(float DeltaTime);
+	void TickLadderState(float DeltaTime);
+	void TickLacheInAirState(float DeltaTime);
+
+	/** Updates IK targets and weights. */
+	void UpdateClimbingIK(float DeltaTime);
+
 	// ========================================================================
 	// Input Mapping Context Management
 	// ========================================================================
