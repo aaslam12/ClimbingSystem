@@ -21,6 +21,8 @@ class UMotionWarpingComponent;
 class UAnimMontage;
 class USoundBase;
 class UAnimNotify_ClimbSoundCue;
+class UAnimNotify_EnableClimbIK;
+class UAnimNotify_DisableClimbIK;
 
 // Log category declared in ClimbingTypes.h: DECLARE_LOG_CATEGORY_EXTERN(LogClimbing, Log, All);
 
