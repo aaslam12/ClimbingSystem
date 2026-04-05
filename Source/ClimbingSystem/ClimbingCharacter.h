@@ -20,6 +20,7 @@ class UInputAction;
 class UMotionWarpingComponent;
 class UAnimMontage;
 class USoundBase;
+class UAnimNotify_ClimbSoundCue;
 
 // Log category declared in ClimbingTypes.h: DECLARE_LOG_CATEGORY_EXTERN(LogClimbing, Log, All);
 
@@ -847,6 +848,11 @@ public:
 	void Client_ConfirmStateTransition(EClimbingState ConfirmedState);
 
 protected:
+	// Friend classes that need access to protected members
+	friend class UAnimNotify_ClimbSoundCue;
+	friend class UAnimNotify_EnableClimbIK;
+	friend class UAnimNotify_DisableClimbIK;
+
 	// ========================================================================
 	// Input Handlers
 	// ========================================================================
