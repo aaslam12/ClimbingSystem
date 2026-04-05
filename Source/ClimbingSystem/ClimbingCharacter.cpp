@@ -16,6 +16,7 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/AssetManager.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/Controller.h"
 
 // Static IK manager array - game thread access only
 TArray<TWeakObjectPtr<AClimbingCharacter>> AClimbingCharacter::ActiveClimbingCharacters;
@@ -49,6 +50,9 @@ AClimbingCharacter::AClimbingCharacter(const FObjectInitializer& ObjectInitializ
 void AClimbingCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Ensure the owning local player receives the default locomotion IMC.
+	AddLocomotionInputMappingContext();
 
 	// Cache original capsule dimensions for restoration when exiting climbing
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
@@ -156,6 +160,7 @@ void AClimbingCharacter::PerformCleanup()
 
 	// 6. Remove ClimbingInputMappingContext from subsystem if present
 	RemoveClimbingInputMappingContext();
+	RemoveLocomotionInputMappingContext();
 
 	// Clear timers
 	if (GetWorld())
@@ -234,12 +239,42 @@ void AClimbingCharacter::Tick(float DeltaTime)
 #endif
 }
 
+void AClimbingCharacter::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+
+	// Re-apply input contexts after possession/controller changes on the owning client.
+	AddLocomotionInputMappingContext();
+
+	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
+	{
+		AddClimbingInputMappingContext();
+	}
+}
+
 void AClimbingCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
+		if (IA_Move)
+		{
+			EnhancedInput->BindAction(IA_Move, ETriggerEvent::Triggered, this, &AClimbingCharacter::Input_Move);
+			EnhancedInput->BindAction(IA_Move, ETriggerEvent::Ongoing, this, &AClimbingCharacter::Input_Move);
+			EnhancedInput->BindAction(IA_Move, ETriggerEvent::Completed, this, &AClimbingCharacter::Input_Move);
+		}
+		if (IA_Look)
+		{
+			EnhancedInput->BindAction(IA_Look, ETriggerEvent::Triggered, this, &AClimbingCharacter::Input_Look);
+			EnhancedInput->BindAction(IA_Look, ETriggerEvent::Ongoing, this, &AClimbingCharacter::Input_Look);
+		}
+		if (IA_Jump)
+		{
+			EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Started, this, &AClimbingCharacter::Input_JumpStarted);
+			EnhancedInput->BindAction(IA_Jump, ETriggerEvent::Completed, this, &AClimbingCharacter::Input_JumpCompleted);
+		}
+
 		// Bind climbing inputs - all using Enhanced Input, zero legacy BindAxis/BindAction calls
 		if (IA_Grab)
 		{
@@ -345,6 +380,46 @@ void AClimbingCharacter::TriggerGrabBreak(const FVector& LaunchVelocity)
 // ============================================================================
 // Input Handlers
 // ============================================================================
+
+void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
+{
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+	if (!Controller)
+	{
+		return;
+	}
+
+	const FRotator ControlRotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0.0f, ControlRotation.Yaw, 0.0f);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+	AddMovementInput(ForwardDirection, MovementVector.Y);
+	AddMovementInput(RightDirection, MovementVector.X);
+}
+
+void AClimbingCharacter::Input_Look(const FInputActionValue& Value)
+{
+	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	if (!Controller)
+	{
+		return;
+	}
+
+	AddControllerYawInput(LookAxisVector.X);
+	AddControllerPitchInput(LookAxisVector.Y);
+}
+
+void AClimbingCharacter::Input_JumpStarted(const FInputActionValue& Value)
+{
+	Jump();
+}
+
+void AClimbingCharacter::Input_JumpCompleted(const FInputActionValue& Value)
+{
+	StopJumping();
+}
 
 void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 {
@@ -2181,6 +2256,22 @@ void AClimbingCharacter::AddClimbingInputMappingContext()
 	}
 }
 
+void AClimbingCharacter::AddLocomotionInputMappingContext()
+{
+	if (!LocomotionInputMappingContext)
+	{
+		return;
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			Subsystem->AddMappingContext(LocomotionInputMappingContext, 0);
+		}
+	}
+}
+
 void AClimbingCharacter::RemoveClimbingInputMappingContext()
 {
 	if (!ClimbingInputMappingContext)
@@ -2193,6 +2284,22 @@ void AClimbingCharacter::RemoveClimbingInputMappingContext()
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
 			Subsystem->RemoveMappingContext(ClimbingInputMappingContext);
+		}
+	}
+}
+
+void AClimbingCharacter::RemoveLocomotionInputMappingContext()
+{
+	if (!LocomotionInputMappingContext)
+	{
+		return;
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			Subsystem->RemoveMappingContext(LocomotionInputMappingContext);
 		}
 	}
 }

@@ -60,6 +60,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Destroyed() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void PawnClientRestart() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void NotifyHit(class UPrimitiveComponent* MyComp, AActor* Other, class UPrimitiveComponent* OtherComp,
@@ -142,6 +143,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Input",
 		meta = (ToolTip = "Fast ladder descent modifier. ETriggerEvent::Ongoing (held)."))
 	TObjectPtr<UInputAction> IA_Crouch;
+
+	/** Standard locomotion move input action from IMC_Default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Input",
+		meta = (ToolTip = "Standard locomotion move action from the default locomotion IMC. Expected value type: Axis2D."))
+	TObjectPtr<UInputAction> IA_Move;
+
+	/** Standard locomotion look input action from IMC_Default or IMC_MouseLook. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Input",
+		meta = (ToolTip = "Standard locomotion look action. Expected value type: Axis2D."))
+	TObjectPtr<UInputAction> IA_Look;
+
+	/** Standard locomotion jump input action from IMC_Default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Input",
+		meta = (ToolTip = "Standard locomotion jump action. Expected value type: Digital."))
+	TObjectPtr<UInputAction> IA_Jump;
 
 	// ========================================================================
 	// Detection Settings
@@ -869,6 +885,10 @@ protected:
 	void Input_SprintCompleted(const FInputActionValue& Value);
 	void Input_Crouch(const FInputActionValue& Value);
 	void Input_CrouchCompleted(const FInputActionValue& Value);
+	void Input_Move(const FInputActionValue& Value);
+	void Input_Look(const FInputActionValue& Value);
+	void Input_JumpStarted(const FInputActionValue& Value);
+	void Input_JumpCompleted(const FInputActionValue& Value);
 
 	// ========================================================================
 	// State Management
@@ -906,6 +926,12 @@ protected:
 
 	/** Removes the climbing IMC from the local player subsystem. */
 	void RemoveClimbingInputMappingContext();
+
+	/** Adds the default locomotion IMC to the local player subsystem. */
+	void AddLocomotionInputMappingContext();
+
+	/** Removes the default locomotion IMC from the local player subsystem. */
+	void RemoveLocomotionInputMappingContext();
 
 	// ========================================================================
 	// Detection Helpers

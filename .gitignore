@@ -1,4 +1,5 @@
 /.vscode/
+/.idea/
 /Binaries/
 /DerivedDataCache/
 /Intermediate/
@@ -7,6 +8,10 @@
 /Content/Developers
 /Content/Collections/
 /Saved/
+/Plugins/
+PROMPT.md
 .ignore
 *.code-workspace
 Makefile
+.codex
+
