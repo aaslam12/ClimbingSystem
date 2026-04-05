@@ -923,6 +923,24 @@ protected:
 	/** Unregisters this character from the IK manager. */
 	void UnregisterFromIKManager();
 
+	/** Sorts the IK manager array by distance to local camera. */
+	static void SortIKManagerByDistance();
+
+	/** Checks if this character is within the IK budget. */
+	bool IsWithinIKBudget() const;
+
+	/** Updates IK for ledge hang state (hands only). */
+	void UpdateLedgeHangIK(float DeltaTime, class UClimbingAnimInstance* AnimInst);
+
+	/** Updates IK for braced wall state (all four limbs). */
+	void UpdateBracedWallIK(float DeltaTime, class UClimbingAnimInstance* AnimInst);
+
+	/** Updates IK for ladder state (all four limbs with rung snapping). */
+	void UpdateLadderIK(float DeltaTime, class UClimbingAnimInstance* AnimInst);
+
+	/** Updates IK for corner transition (FABRIK blend). */
+	void UpdateCornerIK(float DeltaTime, class UClimbingAnimInstance* AnimInst);
+
 	// ========================================================================
 	// Audio Helpers
 	// ========================================================================

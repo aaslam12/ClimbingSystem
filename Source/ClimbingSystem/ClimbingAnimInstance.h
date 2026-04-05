@@ -215,4 +215,5 @@ protected:
 	/** Friend class for direct property access from animation notifies. */
 	friend class UAnimNotify_EnableClimbIK;
 	friend class UAnimNotify_DisableClimbIK;
+	friend class AClimbingCharacter;
 };
