@@ -59,6 +59,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void NotifyHit(class UPrimitiveComponent* MyComp, AActor* Other, class UPrimitiveComponent* OtherComp,
+		bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 
 	// ========================================================================
 	// Components
@@ -1112,6 +1114,16 @@ protected:
 
 	/** Performs ledge detection centered at a specific location (for Lache targeting). */
 	FClimbingDetectionResult PerformLedgeDetectionAtLocation(const FVector& Location) const;
+
+	// ========================================================================
+	// Physics Helpers
+	// ========================================================================
+
+	/**
+	 * Triggers grab break and enters ragdoll state.
+	 * @param LaunchVelocity Velocity to apply to ragdoll on break
+	 */
+	void TriggerGrabBreak(const FVector& LaunchVelocity);
 
 	// ========================================================================
 	// Static IK Manager
