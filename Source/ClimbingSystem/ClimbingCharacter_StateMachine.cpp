@@ -323,6 +323,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			if (UAnimMontage* LacheMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheLaunch))
 			{
 				PlayStateMontage(LacheMontage);
+
+				// Bind montage completion callback to transition to LacheInAir
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnLacheLaunchMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, LacheMontage);
+				}
 			}
 			PlayClimbingSound(EClimbSoundType::LacheLaunchGrunt);
 		}
@@ -344,6 +352,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			if (UAnimMontage* CatchMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheCatch))
 			{
 				PlayStateMontage(CatchMontage);
+
+				// Bind montage completion callback to transition to Hanging
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnLacheCatchMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, CatchMontage);
+				}
 			}
 			PlayClimbingSound(EClimbSoundType::LacheCatchImpact);
 		}
@@ -434,6 +450,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			{
 				PlayStateMontage(CornerMontage);
 
+				// Bind montage completion callback to transition to Hanging
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnCornerTransitionMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, CornerMontage);
+				}
+
 				// Set up motion warp target for corner destination
 				if (MotionWarping && DetectionResult.bValid)
 				{
@@ -471,6 +495,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			if (UAnimMontage* LadderExitMontage = GetMontageForSlot(LadderExitSlot))
 			{
 				PlayStateMontage(LadderExitMontage);
+
+				// Bind montage completion callback to transition to None
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnLadderTransitionMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, LadderExitMontage);
+				}
 
 				// Set up motion warp target if exiting at top
 				if (MotionWarping && DetectionResult.bValid)
@@ -931,6 +963,79 @@ void AClimbingCharacter::OnClimbUpMontageBlendingOut(UAnimMontage* Montage, bool
 		if (!bInterrupted)
 		{
 			TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+		}
+	}
+}
+
+void AClimbingCharacter::OnCornerTransitionMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Only transition if we're still in CornerTransition state
+	if (ClimbingMovement->CurrentClimbingState == EClimbingState::CornerTransition)
+	{
+		if (!bInterrupted)
+		{
+			// After corner transition, go back to Hanging on the new surface
+			// Use current detection result which should have been updated during transition
+			TransitionToState(EClimbingState::Hanging, CurrentDetectionResult);
+		}
+	}
+}
+
+void AClimbingCharacter::OnLadderTransitionMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Only transition if we're still in LadderTransition state
+	if (ClimbingMovement->CurrentClimbingState == EClimbingState::LadderTransition)
+	{
+		if (!bInterrupted)
+		{
+			// Ladder transition ends in None (character exits ladder)
+			TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+		}
+	}
+}
+
+void AClimbingCharacter::OnLacheLaunchMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Only transition if we're still in Lache state
+	if (ClimbingMovement->CurrentClimbingState == EClimbingState::Lache)
+	{
+		if (!bInterrupted)
+		{
+			// After launch animation, transition to in-air flight
+			TransitionToState(EClimbingState::LacheInAir, LockedLacheTarget);
+		}
+	}
+}
+
+void AClimbingCharacter::OnLacheCatchMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Only transition if we're still in LacheCatch state
+	if (ClimbingMovement->CurrentClimbingState == EClimbingState::LacheCatch)
+	{
+		if (!bInterrupted)
+		{
+			// After catching, transition to Hanging on the target ledge
+			TransitionToState(EClimbingState::Hanging, LockedLacheTarget);
 		}
 	}
 }

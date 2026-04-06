@@ -919,6 +919,22 @@ protected:
 	UFUNCTION()
 	void OnClimbUpMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 
+	/** Called when a CornerTransition montage completes to transition to Hanging. */
+	UFUNCTION()
+	void OnCornerTransitionMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
+	/** Called when a LadderTransition montage completes to transition to None. */
+	UFUNCTION()
+	void OnLadderTransitionMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
+	/** Called when Lache launch montage completes to transition to LacheInAir. */
+	UFUNCTION()
+	void OnLacheLaunchMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
+	/** Called when LacheCatch montage completes to transition to Hanging. */
+	UFUNCTION()
+	void OnLacheCatchMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
 	/** Updates IK targets and weights. */
 	void UpdateClimbingIK(float DeltaTime);
 
