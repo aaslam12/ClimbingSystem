@@ -160,9 +160,11 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 				ClimbingMovement->Velocity = FVector::ZeroVector;
 				if (DetectionResult.HitComponent.IsValid())
 				{
+					// SurfaceNormal points AWAY from the wall (toward player)
+					// To position the character in front of the wall, we ADD the surface normal
 					const float WallStandOff = ClimbingCapsuleRadius + 8.0f;
 					const float HangVerticalOffset = ClimbingCapsuleHalfHeight + 12.0f;
-					const FVector HangLocation = DetectionResult.LedgePosition - DetectionResult.SurfaceNormal * WallStandOff - FVector::UpVector * HangVerticalOffset;
+					const FVector HangLocation = DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * WallStandOff - FVector::UpVector * HangVerticalOffset;
 					SetActorLocation(HangLocation, false);
 					ClimbingMovement->SetAnchor(DetectionResult.HitComponent.Get(), GetActorLocation());
 					SetBase(DetectionResult.HitComponent.Get());
@@ -296,6 +298,17 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 
 	case EClimbingState::DroppingDown:
 		{
+			// Calculate safe drop position - push character away from wall surface
+			if (ClimbingMovement && ClimbingMovement->PreviousClimbingState != EClimbingState::None)
+			{
+				// Use the previous detection result for surface normal
+				// The SurfaceNormal points AWAY from the wall, so adding it moves us away
+				const float DropOffsetDistance = ClimbingCapsuleRadius + 20.0f;
+				const FVector DropOffset = CurrentDetectionResult.SurfaceNormal * DropOffsetDistance;
+				const FVector NewLocation = GetActorLocation() + DropOffset;
+				SetActorLocation(NewLocation, false);
+			}
+
 			if (UAnimMontage* DropMontage = GetMontageForSlot(EClimbingAnimationSlot::DropDown))
 			{
 				PlayStateMontage(DropMontage);
@@ -606,7 +619,8 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 			RemoveClimbingInputMappingContext();
 		}
 
-		bUseControllerRotationYaw = true;
+		// Keep bUseControllerRotationYaw false - don't orient to camera after exiting climb
+		// The character rotation is managed by movement component's orient to movement setting
 
 		if (CameraBoom && IsLocallyControlled())
 		{
