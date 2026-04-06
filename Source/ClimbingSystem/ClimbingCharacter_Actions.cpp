@@ -107,18 +107,40 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 
 		if (DetectionResult.bValid)
 		{
-			// Initiate grab
+			// Determine target state based on surface type and ledge height
+			EClimbingState TargetState = EClimbingState::Hanging;
+
+			if (DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly)
+			{
+				TargetState = EClimbingState::OnLadder;
+			}
+			else
+			{
+				// Check if this is a low ledge that should be mantled instead of hung from
+				// Only mantle from ground, not while falling (mantling needs stable footing)
+				if (!ClimbingMovement->IsFalling() && DetectionResult.ClearanceType != EClimbClearanceType::None)
+				{
+					const float CharacterFeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+					const float LedgeHeight = DetectionResult.LedgePosition.Z - CharacterFeetZ;
+
+					// If ledge is within mantle range and has clearance, mantle over it
+					if (LedgeHeight > MantleStepMaxHeight && LedgeHeight <= MantleHighMaxHeight)
+					{
+						TargetState = EClimbingState::Mantling;
+					}
+				}
+			}
+
+			// Initiate grab/mantle
 			if (HasAuthority())
 			{
-				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ?
-					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+				TransitionToState(TargetState, DetectionResult);
 			}
 			else
 			{
 				// Client prediction + server RPC
 				PrePredictionPosition = GetActorLocation();
-				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ?
-					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+				TransitionToState(TargetState, DetectionResult);
 				Server_AttemptGrab(DetectionResult.ToNetResult());
 			}
 		}

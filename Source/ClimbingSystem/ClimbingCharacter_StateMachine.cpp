@@ -6,6 +6,7 @@
 #include "ClimbingAnimInstance.h"
 #include "ClimbingAnimationSet.h"
 #include "ClimbingSurfaceData.h"
+#include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/AssetManager.h"
@@ -365,6 +366,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			{
 				PlayStateMontage(ClimbUpMontage);
 
+				// Bind montage completion callback to transition to None
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnClimbUpMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, ClimbUpMontage);
+				}
+
 				// Set up motion warp target
 				if (MotionWarping && DetectionResult.bValid)
 				{
@@ -384,6 +393,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			if (UAnimMontage* ClimbUpCrouchMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUpCrouch))
 			{
 				PlayStateMontage(ClimbUpCrouchMontage);
+
+				// Bind montage completion callback to transition to None
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnClimbUpMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, ClimbUpCrouchMontage);
+				}
 
 				// Set up motion warp target
 				if (MotionWarping && DetectionResult.bValid)
@@ -482,6 +499,14 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			if (UAnimMontage* MantleMontage = GetMontageForSlot(MantleSlot))
 			{
 				PlayStateMontage(MantleMontage);
+
+				// Bind montage completion callback to transition to None
+				if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+				{
+					FOnMontageBlendingOutStarted BlendOutDelegate;
+					BlendOutDelegate.BindUObject(this, &AClimbingCharacter::OnClimbUpMontageBlendingOut);
+					AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, MantleMontage);
+				}
 
 				// Set up motion warp target for mantle destination
 				if (MotionWarping && DetectionResult.bValid)
@@ -885,6 +910,27 @@ void AClimbingCharacter::RemoveLocomotionInputMappingContext()
 			{
 				Subsystem->RemoveMappingContext(LocomotionInputMappingContext);
 			}
+		}
+	}
+}
+
+void AClimbingCharacter::OnClimbUpMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	// Only transition to None if we're still in a climb up or mantle state
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	if (CurrentState == EClimbingState::ClimbingUp ||
+		CurrentState == EClimbingState::ClimbingUpCrouch ||
+		CurrentState == EClimbingState::Mantling)
+	{
+		// If interrupted (e.g., by ragdoll), don't force transition to None
+		if (!bInterrupted)
+		{
+			TransitionToState(EClimbingState::None, FClimbingDetectionResult());
 		}
 	}
 }

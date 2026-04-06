@@ -915,6 +915,10 @@ protected:
 	void TickLadderState(float DeltaTime);
 	void TickLacheInAirState(float DeltaTime);
 
+	/** Called when a ClimbUp/Mantle montage completes to transition to None. */
+	UFUNCTION()
+	void OnClimbUpMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+
 	/** Updates IK targets and weights. */
 	void UpdateClimbingIK(float DeltaTime);
 
