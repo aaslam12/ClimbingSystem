@@ -286,6 +286,18 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 	const FVector ClearanceCheckStart = DownHit.ImpactPoint + UpVector * 10.0f;
 	const FVector ClearanceCheckEnd = ClearanceCheckStart + UpVector * OriginalCapsuleHalfHeight * 2.0f;
 
+	// Add the ledge components to ignore list for clearance check
+	// Both the wall (ForwardHit) and ledge top (DownHit) should be ignored
+	FCollisionQueryParams ClearanceQueryParams = QueryParams;
+	if (DownHit.Component.IsValid())
+	{
+		ClearanceQueryParams.AddIgnoredComponent(DownHit.Component.Get());
+	}
+	if (ForwardHit.Component.IsValid() && ForwardHit.Component != DownHit.Component)
+	{
+		ClearanceQueryParams.AddIgnoredComponent(ForwardHit.Component.Get());
+	}
+
 	FHitResult ClearanceHit;
 	bool bClearanceBlocked = GetWorld()->SweepSingleByChannel(
 		ClearanceHit,
@@ -294,8 +306,17 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 		FQuat::Identity,
 		ECC_WorldStatic,
 		FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f),
-		QueryParams
+		ClearanceQueryParams
 	);
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug && bClearanceBlocked)
+	{
+		UE_LOG(LogClimbing, Log, TEXT("Clearance blocked by: %s at distance %.1f"), 
+			ClearanceHit.Component.IsValid() ? *ClearanceHit.Component->GetName() : TEXT("Unknown"),
+			ClearanceHit.Distance);
+	}
+#endif
 
 	EClimbClearanceType ClearanceType = EClimbClearanceType::Full;
 	if (bClearanceBlocked)
@@ -310,10 +331,17 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 			FQuat::Identity,
 			ECC_WorldStatic,
 			FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f),
-			QueryParams
+			ClearanceQueryParams
 		);
 
 		ClearanceType = bCrouchBlocked ? EClimbClearanceType::None : EClimbClearanceType::CrouchOnly;
+		
+#if !UE_BUILD_SHIPPING
+		if (bDrawDebug)
+		{
+			UE_LOG(LogClimbing, Log, TEXT("Crouch clearance: %s"), bCrouchBlocked ? TEXT("BLOCKED") : TEXT("Available"));
+		}
+#endif
 	}
 
 #if !UE_BUILD_SHIPPING
