@@ -644,6 +644,8 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 				{
 					Capsule->SetCapsuleSize(OriginalCapsuleRadius, OriginalCapsuleHalfHeight);
 					Capsule->SetCollisionProfileName(OriginalCollisionProfile);
+					// Explicitly re-enable collision to handle edge cases where it may have been disabled
+					Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 				}
 			}
 		}

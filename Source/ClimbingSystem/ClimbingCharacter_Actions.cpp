@@ -40,11 +40,24 @@ void AClimbingCharacter::Input_Look(const FInputActionValue& Value)
 
 void AClimbingCharacter::Input_JumpStarted(const FInputActionValue& Value)
 {
+	// During climbing, jump should be handled by the climbing IMC (e.g., Lache action)
+	// If this locomotion jump fires during climbing, ignore it
+	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
+	{
+		return;
+	}
+
 	Jump();
 }
 
 void AClimbingCharacter::Input_JumpCompleted(const FInputActionValue& Value)
 {
+	// Only stop jumping if not climbing
+	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
+	{
+		return;
+	}
+
 	StopJumping();
 }
 
