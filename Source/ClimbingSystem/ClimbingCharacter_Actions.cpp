@@ -141,6 +141,59 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 			}
 		}
 
+		// If normal detection failed and we're on ground, try simplified mantle detection
+		if (!DetectionResult.bValid && !ClimbingMovement->IsFalling())
+		{
+			// Simplified forward trace for low obstacles
+			const FVector CharacterLocation = GetActorLocation();
+			const FVector ForwardVector = GetActorForwardVector();
+			const FVector ForwardTraceStart = CharacterLocation + FVector::UpVector * 50.0f; // Waist height
+			const FVector ForwardTraceEnd = ForwardTraceStart + ForwardVector * LedgeDetectionForwardReach;
+
+			FCollisionQueryParams QueryParams;
+			QueryParams.AddIgnoredActor(this);
+			QueryParams.bTraceComplex = false;
+
+			FHitResult ForwardHit;
+			if (GetWorld() && GetWorld()->SweepSingleByChannel(
+				ForwardHit,
+				ForwardTraceStart,
+				ForwardTraceEnd,
+				FQuat::Identity,
+				ECC_WorldStatic,
+				FCollisionShape::MakeSphere(LedgeDetectionRadius),
+				QueryParams))
+			{
+				// Check if it's climbable
+				const bool bHasClimbableTag = ForwardHit.Component.IsValid() && 
+					(ForwardHit.Component->ComponentHasTag(FName("Climbable")) || 
+					 !ForwardHit.Component->ComponentHasTag(FName("Unclimbable")));
+
+				if (bHasClimbableTag)
+				{
+					// Use the top of the hit as the ledge position
+					FVector LedgePos = ForwardHit.ImpactPoint;
+					LedgePos.Z = ForwardHit.Component->Bounds.GetBox().Max.Z;
+
+					const float CharacterFeetZ = CharacterLocation.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+					const float ObstacleHeight = LedgePos.Z - CharacterFeetZ;
+
+					// Check if it's in mantle height range
+					if (ObstacleHeight > MantleStepMaxHeight && ObstacleHeight <= MantleHighMaxHeight)
+					{
+						DetectionResult.bValid = true;
+						DetectionResult.LedgePosition = LedgePos;
+						DetectionResult.SurfaceNormal = ForwardHit.ImpactNormal;
+						DetectionResult.HitComponent = ForwardHit.Component;
+						DetectionResult.ClearanceType = EClimbClearanceType::Full; // Assume full for mantles
+						DetectionResult.SurfaceTier = EClimbSurfaceTier::Climbable;
+
+						UE_LOG(LogClimbing, Log, TEXT("Mantle detection: Found obstacle at height %.1f cm"), ObstacleHeight);
+					}
+				}
+			}
+		}
+
 		if (DetectionResult.bValid)
 		{
 			// Determine target state based on surface type and ledge height
@@ -406,6 +459,7 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 {
 	if (!ClimbingMovement)
 	{
+		UE_LOG(LogClimbing, Warning, TEXT("Input_ClimbUp: ClimbingMovement is null!"));
 		return;
 	}
 
@@ -414,11 +468,13 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 	// Climb up is valid from Hanging
 	if (CurrentState != EClimbingState::Hanging)
 	{
+		UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Not in Hanging state (current: %s)"), *UEnum::GetValueAsString(CurrentState));
 		return;
 	}
 
 	if (!ClimbingMovement->CanInterruptCurrentState())
 	{
+		UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Cannot interrupt current state"));
 		return;
 	}
 
@@ -428,11 +484,14 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 	if (Clearance == EClimbClearanceType::None)
 	{
 		// Cannot climb up - no clearance
+		UE_LOG(LogClimbing, Warning, TEXT("Input_ClimbUp: No clearance above ledge! Cannot climb up. Move to a location with overhead clearance."));
 		return;
 	}
 
 	const EClimbingState ClimbUpState = (Clearance == EClimbClearanceType::Full) ?
 		EClimbingState::ClimbingUp : EClimbingState::ClimbingUpCrouch;
+
+	UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Transitioning to %s"), *UEnum::GetValueAsString(ClimbUpState));
 
 	if (HasAuthority())
 	{

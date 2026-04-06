@@ -194,6 +194,11 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 						MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
 					}
 				}
+				
+#if !UE_BUILD_SHIPPING
+				UE_LOG(LogClimbing, Log, TEXT("Entered Hanging state. Clearance: %s. Press ClimbUp to pull up over ledge."),
+					*UEnum::GetValueAsString(DetectionResult.ClearanceType));
+#endif
 			}
 			else
 			{
