@@ -307,16 +307,19 @@ bool UClimbingMovementComponent::IsValidStateTransition(EClimbingState NewState)
 	case EClimbingState::LadderTransition:
 		// From LadderTransition: OnLadder, None (on completion)
 		return NewState == EClimbingState::OnLadder ||
+			   NewState == EClimbingState::None ||
 			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::ClimbingUp:
 	case EClimbingState::ClimbingUpCrouch:
-		// From ClimbingUp: None (on completion)
-		return NewState == EClimbingState::Ragdoll;
+		// From ClimbingUp: None (on completion), Ragdoll (on break)
+		return NewState == EClimbingState::None ||
+			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::Mantling:
-		// From Mantling: None (on completion)
-		return NewState == EClimbingState::Ragdoll;
+		// From Mantling: None (on completion), Ragdoll (on break)
+		return NewState == EClimbingState::None ||
+			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::Lache:
 		// From Lache: LacheInAir
@@ -335,12 +338,14 @@ bool UClimbingMovementComponent::IsValidStateTransition(EClimbingState NewState)
 			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::LacheMiss:
-		// From LacheMiss: None (falling)
-		return NewState == EClimbingState::Ragdoll;
+		// From LacheMiss: None (falling), Ragdoll (on impact)
+		return NewState == EClimbingState::None ||
+			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::DroppingDown:
-		// From DroppingDown: None
-		return NewState == EClimbingState::Ragdoll;
+		// From DroppingDown: None (on completion), Ragdoll (on break)
+		return NewState == EClimbingState::None ||
+			   NewState == EClimbingState::Ragdoll;
 
 	case EClimbingState::Ragdoll:
 		// From Ragdoll: None (on recovery)
