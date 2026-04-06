@@ -47,7 +47,13 @@ void UClimbingMovementComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// Update character position to follow moving anchor
-	if (AnchorComponent && (CurrentClimbingState == EClimbingState::Hanging || CurrentClimbingState == EClimbingState::Shimmying || CurrentClimbingState == EClimbingState::BracedWall || CurrentClimbingState == EClimbingState::BracedShimmying || CurrentClimbingState == EClimbingState::OnLadder))
+	if (AnchorComponent && (CurrentClimbingState == EClimbingState::Hanging ||
+		CurrentClimbingState == EClimbingState::Shimmying ||
+		CurrentClimbingState == EClimbingState::BracedWall ||
+		CurrentClimbingState == EClimbingState::BracedShimmying ||
+		CurrentClimbingState == EClimbingState::OnLadder ||
+		CurrentClimbingState == EClimbingState::CornerTransition ||
+		CurrentClimbingState == EClimbingState::LadderTransition))
 	{
 		UpdateAnchorFollowing();
 	}

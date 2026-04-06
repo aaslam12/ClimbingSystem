@@ -270,6 +270,30 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 		}
 		break;
 
+	case EClimbingState::Shimmying:
+		{
+			// Play shimmy montage based on committed direction
+			const EClimbingAnimationSlot ShimmySlot = (CommittedShimmyDir < 0.0f) ?
+				EClimbingAnimationSlot::ShimmyLeft : EClimbingAnimationSlot::ShimmyRight;
+			if (UAnimMontage* ShimmyMontage = GetMontageForSlot(ShimmySlot))
+			{
+				PlayStateMontage(ShimmyMontage);
+			}
+		}
+		break;
+
+	case EClimbingState::BracedShimmying:
+		{
+			// Play braced shimmy montage based on committed direction
+			const EClimbingAnimationSlot BracedShimmySlot = (CommittedShimmyDir < 0.0f) ?
+				EClimbingAnimationSlot::BracedShimmyLeft : EClimbingAnimationSlot::BracedShimmyRight;
+			if (UAnimMontage* BracedShimmyMontage = GetMontageForSlot(BracedShimmySlot))
+			{
+				PlayStateMontage(BracedShimmyMontage);
+			}
+		}
+		break;
+
 	case EClimbingState::DroppingDown:
 		{
 			if (UAnimMontage* DropMontage = GetMontageForSlot(EClimbingAnimationSlot::DropDown))
@@ -616,16 +640,19 @@ void AClimbingCharacter::AddClimbingInputMappingContext()
 
 void AClimbingCharacter::AddLocomotionInputMappingContext()
 {
-	if (!LocomotionInputMappingContext)
+	if (!IsLocallyControlled() || !LocomotionInputMappingContext)
 	{
 		return;
 	}
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		if (ULocalPlayer* LocalPlayer = PC->GetLocalPlayer())
 		{
-			Subsystem->AddMappingContext(LocomotionInputMappingContext, 0);
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+			{
+				Subsystem->AddMappingContext(LocomotionInputMappingContext, 0);
+			}
 		}
 	}
 }
@@ -651,16 +678,19 @@ void AClimbingCharacter::RemoveClimbingInputMappingContext()
 
 void AClimbingCharacter::RemoveLocomotionInputMappingContext()
 {
-	if (!LocomotionInputMappingContext)
+	if (!IsLocallyControlled() || !LocomotionInputMappingContext)
 	{
 		return;
 	}
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		if (ULocalPlayer* LocalPlayer = PC->GetLocalPlayer())
 		{
-			Subsystem->RemoveMappingContext(LocomotionInputMappingContext);
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+			{
+				Subsystem->RemoveMappingContext(LocomotionInputMappingContext);
+			}
 		}
 	}
 }

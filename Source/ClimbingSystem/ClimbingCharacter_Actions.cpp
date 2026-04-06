@@ -725,6 +725,19 @@ void AClimbingCharacter::TickLadderState(float DeltaTime)
 		TargetSlot = bFastDescent ? EClimbingAnimationSlot::LadderFastDescend : EClimbingAnimationSlot::LadderClimbDown;
 	}
 
+	// Play the appropriate ladder animation montage
+	if (UAnimMontage* LadderMontage = GetMontageForSlot(TargetSlot))
+	{
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			// Only play if not already playing this montage
+			if (AnimInstance->GetCurrentActiveMontage() != LadderMontage)
+			{
+				AnimInstance->Montage_Play(LadderMontage);
+			}
+		}
+	}
+
 	// Update animation instance
 	if (UClimbingAnimInstance* AnimInst = CachedAnimInstance.Get())
 	{
