@@ -47,7 +47,7 @@ void UClimbingMovementComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// Update character position to follow moving anchor
-	if (AnchorComponent && CurrentClimbingState != EClimbingState::None)
+	if (AnchorComponent && (CurrentClimbingState == EClimbingState::Hanging || CurrentClimbingState == EClimbingState::Shimmying || CurrentClimbingState == EClimbingState::BracedWall || CurrentClimbingState == EClimbingState::BracedShimmying || CurrentClimbingState == EClimbingState::OnLadder))
 	{
 		UpdateAnchorFollowing();
 	}
@@ -98,6 +98,27 @@ bool UClimbingMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
 		return false;
 	}
 	return Super::DoJump(bReplayingMoves, DeltaTime);
+}
+
+void UClimbingMovementComponent::PhysFlying(float deltaTime, int32 Iterations)
+{
+	// During static climbing states (Hanging, BracedWall), ignore player input
+	// to prevent unwanted movement while character is locked to ledge
+	switch (CurrentClimbingState)
+	{
+	case EClimbingState::Hanging:
+	case EClimbingState::BracedWall:
+	case EClimbingState::OnLadder:
+		// Zero out velocity to keep character in place
+		Velocity = FVector::ZeroVector;
+		// Don't call Super - we handle movement manually via SetBase/anchor
+		return;
+
+	default:
+		// For other states, use default flying physics
+		Super::PhysFlying(deltaTime, Iterations);
+		break;
+	}
 }
 
 bool UClimbingMovementComponent::ShouldUsePackedMovementRPCs() const
@@ -182,6 +203,8 @@ void UClimbingMovementComponent::SetClimbingState(EClimbingState NewState)
 	PreviousClimbingState = CurrentClimbingState;
 	CurrentClimbingState = NewState;
 	CurrentMontageCompletion = 0.0f;
+
+	ApplyMovementModeForState(NewState);
 
 	// Clear anchor when exiting climbing
 	if (NewState == EClimbingState::None)
@@ -328,9 +351,10 @@ void UClimbingMovementComponent::SetAnchor(UPrimitiveComponent* NewAnchor, const
 
 	if (NewAnchor)
 	{
-		// Calculate local transform relative to anchor
 		const FTransform AnchorWorldTransform = NewAnchor->GetComponentTransform();
-		const FVector LocalPosition = AnchorWorldTransform.InverseTransformPosition(WorldGrabPoint);
+		const AActor* OwnerActor = GetOwner();
+		const FVector ActorWorldPosition = OwnerActor ? OwnerActor->GetActorLocation() : WorldGrabPoint;
+		const FVector LocalPosition = AnchorWorldTransform.InverseTransformPosition(ActorWorldPosition);
 		AnchorLocalTransform = FTransform(FQuat::Identity, LocalPosition);
 
 		// Set the character's movement base to the anchor for physics sync
@@ -376,16 +400,10 @@ void UClimbingMovementComponent::UpdateAnchorFollowing()
 	}
 
 	// Calculate where the character should be based on anchor movement
-	const FVector TargetGrabPosition = GetWorldGrabPosition();
-	
-	// The character's grab point is typically at the ledge, which is above the character's location
-	// We maintain the relative offset established when the grab was initiated
+	const FVector TargetAnchorPosition = GetWorldGrabPosition();
 	
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
 	{
-		// The anchor following is handled by SetBase in most cases
-		// This function is here for additional custom anchor logic if needed
-		
 		// Validate anchor is still valid - use IsValid() instead of deprecated IsPendingKill()
 		if (!IsValid(AnchorComponent))
 		{
@@ -397,12 +415,18 @@ void UClimbingMovementComponent::UpdateAnchorFollowing()
 				// Character will handle state transition
 				ClearAnchor();
 			}
+
+			return;
 		}
+
+		Character->SetActorLocation(TargetAnchorPosition, false);
 	}
 }
 
 void UClimbingMovementComponent::OnRep_ClimbingState()
 {
+	ApplyMovementModeForState(CurrentClimbingState);
+
 	// This is called on clients when the state is replicated
 	// Simulated proxies need to play appropriate animations and resolve HitComponent
 	
@@ -410,5 +434,48 @@ void UClimbingMovementComponent::OnRep_ClimbingState()
 	{
 		// Notify character of replicated state change
 		ClimbingChar->OnClimbingStateReplicated(PreviousClimbingState, CurrentClimbingState);
+	}
+}
+
+void UClimbingMovementComponent::ApplyMovementModeForState(EClimbingState NewState)
+{
+	switch (NewState)
+	{
+	case EClimbingState::Hanging:
+	case EClimbingState::Shimmying:
+	case EClimbingState::BracedWall:
+	case EClimbingState::BracedShimmying:
+	case EClimbingState::OnLadder:
+	case EClimbingState::CornerTransition:
+	case EClimbingState::LadderTransition:
+	case EClimbingState::ClimbingUp:
+	case EClimbingState::ClimbingUpCrouch:
+	case EClimbingState::Mantling:
+	case EClimbingState::LacheCatch:
+		SetMovementMode(MOVE_Flying);
+		break;
+
+	case EClimbingState::None:
+		// When returning to None, check if on ground and set appropriate mode
+		if (IsMovingOnGround())
+		{
+			SetMovementMode(MOVE_Walking);
+		}
+		else
+		{
+			SetMovementMode(MOVE_Falling);
+		}
+		break;
+
+	case EClimbingState::DroppingDown:
+	case EClimbingState::Lache:
+	case EClimbingState::LacheInAir:
+	case EClimbingState::LacheMiss:
+	case EClimbingState::Ragdoll:
+		SetMovementMode(MOVE_Falling);
+		break;
+
+	default:
+		break;
 	}
 }

@@ -65,6 +65,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void NotifyHit(class UPrimitiveComponent* MyComp, AActor* Other, class UPrimitiveComponent* OtherComp,
 		bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
+	virtual void Landed(const FHitResult& Hit) override;
 
 	// ========================================================================
 	// Components
@@ -1101,6 +1102,8 @@ protected:
 
 	/** Original collision profile before climbing. */
 	FName OriginalCollisionProfile;
+
+	EClimbingState PendingStateTransitionTarget = EClimbingState::None;
 
 	/** Resolved sound cache. */
 	UPROPERTY()

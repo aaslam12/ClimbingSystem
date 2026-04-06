@@ -63,6 +63,7 @@ public:
 	virtual float GetMaxSpeed() const override;
 	virtual bool CanAttemptJump() const override;
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+	virtual void PhysFlying(float deltaTime, int32 Iterations) override;
 	
 	/**
 	 * Override to prevent base class from interfering with in-place climbing animations.
@@ -259,4 +260,6 @@ protected:
 	 * @return Penalty multiplier (1.0 = no penalty, lower = slower)
 	 */
 	float CalculateOverhangPenalty(const FVector& SurfaceNormal) const;
+
+	void ApplyMovementModeForState(EClimbingState NewState);
 };
