@@ -592,6 +592,12 @@ void AClimbingCharacter::TickBracedShimmyingState(float DeltaTime)
 		CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
 	}
 
+	// Send direction update to server (unreliable, can be called frequently)
+	if (!HasAuthority() && IsLocallyControlled())
+	{
+		Server_UpdateShimmyDirection(CurrentClimbMoveInput);
+	}
+
 	// Check if player released input
 	if (FMath::IsNearlyZero(CurrentClimbMoveInput.X))
 	{
