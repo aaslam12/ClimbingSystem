@@ -2,6 +2,7 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
+#include "ClimbingMovementComponent.h"
 #include "ClimbingSurfaceData.h"
 #include "DrawDebugHelpers.h"
 
@@ -209,12 +210,13 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 	}
 
 	// Step 2: Trace downward from above the wall to find the ledge top
+	// Use multi-trace to handle stacked ledges - we want the topmost valid ledge
 	const FVector DownTraceStart = ForwardHit.ImpactPoint + ForwardVector * MinLedgeDepth + UpVector * LedgeDetectionVerticalReach;
 	const FVector DownTraceEnd = DownTraceStart - UpVector * LedgeDetectionVerticalReach * 1.5f;
 
-	FHitResult DownHit;
-	bool bDownHit = GetWorld()->SweepSingleByChannel(
-		DownHit,
+	TArray<FHitResult> DownHits;
+	GetWorld()->SweepMultiByChannel(
+		DownHits,
 		DownTraceStart,
 		DownTraceEnd,
 		FQuat::Identity,
@@ -226,21 +228,59 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug)
 	{
-		DrawDebugLine(GetWorld(), DownTraceStart, DownTraceEnd, bDownHit ? FColor::Green : FColor::Yellow, false, 0.1f);
+		DrawDebugLine(GetWorld(), DownTraceStart, DownTraceEnd, DownHits.Num() > 0 ? FColor::Green : FColor::Yellow, false, 0.1f);
 	}
 #endif
 
-	if (!bDownHit)
+	if (DownHits.Num() == 0)
 	{
 		return Result;
 	}
 
-	// Verify this is approximately horizontal (a ledge top)
-	const float LedgeTopAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(DownHit.ImpactNormal, UpVector)));
-	if (LedgeTopAngle > MaxClimbableSurfaceAngle)
+	// Find the best ledge hit - prefer the one closest to character's current height when climbing
+	// This prevents jumping between stacked ledges during shimmy
+	const bool bIsCurrentlyClimbing = ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None;
+	const float CurrentCharacterZ = CharacterLocation.Z;
+
+	FHitResult* BestDownHit = nullptr;
+	float BestScore = TNumericLimits<float>::Max();
+
+	for (FHitResult& DownHit : DownHits)
 	{
-		return Result; // Not a flat enough ledge top
+		// Verify this is approximately horizontal (a ledge top)
+		const float LedgeTopAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(DownHit.ImpactNormal, UpVector)));
+		if (LedgeTopAngle > MaxClimbableSurfaceAngle)
+		{
+			continue; // Not a flat enough ledge top
+		}
+
+		// Calculate preference score
+		float Score;
+		if (bIsCurrentlyClimbing)
+		{
+			// When climbing, prefer ledges at similar height to current position
+			Score = FMath::Abs(DownHit.ImpactPoint.Z - CurrentCharacterZ);
+		}
+		else
+		{
+			// When not climbing (initial grab), prefer the highest reachable ledge
+			// Lower Z value in trace direction = hit earlier = higher ledge
+			Score = -DownHit.ImpactPoint.Z;
+		}
+
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			BestDownHit = &DownHit;
+		}
 	}
+
+	if (!BestDownHit)
+	{
+		return Result;
+	}
+
+	const FHitResult& DownHit = *BestDownHit;
 
 	// Step 3: Check clearance above ledge
 	const FVector ClearanceCheckStart = DownHit.ImpactPoint + UpVector * 10.0f;
