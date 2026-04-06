@@ -378,7 +378,8 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 	case EClimbingState::ClimbingUp:
 		{
 			// Play climb up montage
-			if (UAnimMontage* ClimbUpMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUp))
+			UAnimMontage* ClimbUpMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUp);
+			if (ClimbUpMontage)
 			{
 				PlayStateMontage(ClimbUpMontage);
 
@@ -400,13 +401,35 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
 				}
 			}
+			else
+			{
+				UE_LOG(LogClimbing, Error, TEXT("ClimbingUp: No montage assigned for ClimbUp slot! Character will be stuck. Assign montage in Animation Set or use auto-transition fallback."));
+				// Fallback: teleport to ledge and exit climbing
+				if (DetectionResult.bValid && MotionWarping)
+				{
+					SetActorLocation(DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * 50.0f);
+				}
+				// Auto-exit after short delay
+				if (GetWorld())
+				{
+					FTimerHandle UnusedHandle;
+					GetWorld()->GetTimerManager().SetTimer(UnusedHandle, [this]()
+					{
+						if (ClimbingMovement && ClimbingMovement->CurrentClimbingState == EClimbingState::ClimbingUp)
+						{
+							TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+						}
+					}, 0.5f, false);
+				}
+			}
 		}
 		break;
 
 	case EClimbingState::ClimbingUpCrouch:
 		{
 			// Play climb up crouch montage
-			if (UAnimMontage* ClimbUpCrouchMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUpCrouch))
+			UAnimMontage* ClimbUpCrouchMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUpCrouch);
+			if (ClimbUpCrouchMontage)
 			{
 				PlayStateMontage(ClimbUpCrouchMontage);
 
@@ -426,6 +449,27 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 					WarpTarget.Location = DetectionResult.LedgePosition;
 					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
 					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+			else
+			{
+				UE_LOG(LogClimbing, Error, TEXT("ClimbingUpCrouch: No montage assigned for ClimbUpCrouch slot! Character will be stuck. Assign montage in Animation Set or use auto-transition fallback."));
+				// Fallback: teleport to ledge and exit climbing
+				if (DetectionResult.bValid && MotionWarping)
+				{
+					SetActorLocation(DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * 50.0f);
+				}
+				// Auto-exit after short delay
+				if (GetWorld())
+				{
+					FTimerHandle UnusedHandle;
+					GetWorld()->GetTimerManager().SetTimer(UnusedHandle, [this]()
+					{
+						if (ClimbingMovement && ClimbingMovement->CurrentClimbingState == EClimbingState::ClimbingUpCrouch)
+						{
+							TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+						}
+					}, 0.5f, false);
 				}
 			}
 		}
@@ -528,7 +572,8 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			EClimbingAnimationSlot MantleSlot = (MantleHeight > MantleLowMaxHeight) ?
 				EClimbingAnimationSlot::MantleHigh : EClimbingAnimationSlot::MantleLow;
 
-			if (UAnimMontage* MantleMontage = GetMontageForSlot(MantleSlot))
+			UAnimMontage* MantleMontage = GetMontageForSlot(MantleSlot);
+			if (MantleMontage)
 			{
 				PlayStateMontage(MantleMontage);
 
@@ -548,6 +593,28 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 					WarpTarget.Location = DetectionResult.LedgePosition;
 					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
 					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+			else
+			{
+				UE_LOG(LogClimbing, Error, TEXT("Mantling: No montage assigned for %s slot! Character will be stuck. Assign montage in Animation Set or use auto-transition fallback."),
+					(MantleHeight > MantleLowMaxHeight) ? TEXT("MantleHigh") : TEXT("MantleLow"));
+				// Fallback: teleport to ledge and exit climbing
+				if (DetectionResult.bValid && MotionWarping)
+				{
+					SetActorLocation(DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * 50.0f);
+				}
+				// Auto-exit after short delay
+				if (GetWorld())
+				{
+					FTimerHandle UnusedHandle;
+					GetWorld()->GetTimerManager().SetTimer(UnusedHandle, [this]()
+					{
+						if (ClimbingMovement && ClimbingMovement->CurrentClimbingState == EClimbingState::Mantling)
+						{
+							TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+						}
+					}, 0.5f, false);
 				}
 			}
 		}
