@@ -5,6 +5,7 @@
 #include "ClimbingMovementComponent.h"
 #include "ClimbingAnimInstance.h"
 #include "ClimbingSurfaceData.h"
+#include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Controller.h"
 
@@ -16,6 +17,20 @@ void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
 		return;
 	}
 
+	// If climbing, update climb move input instead of using AddMovementInput
+	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
+	{
+		CurrentClimbMoveInput = MovementVector;
+		
+		// Update committed shimmy direction with hysteresis
+		if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
+		{
+			CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
+		}
+		return;
+	}
+
+	// Normal locomotion movement
 	const FRotator ControlRotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0.0f, ControlRotation.Yaw, 0.0f);
 
@@ -40,13 +55,21 @@ void AClimbingCharacter::Input_Look(const FInputActionValue& Value)
 
 void AClimbingCharacter::Input_JumpStarted(const FInputActionValue& Value)
 {
-	// During climbing, jump should be handled by the climbing IMC (e.g., Lache action)
-	// If this locomotion jump fires during climbing, ignore it
+	// Handle jump during climbing
 	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
 	{
+		const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+		
+		// Jump from hanging - trigger lache (directional jump to next ledge)
+		if (CurrentState == EClimbingState::Hanging)
+		{
+			Input_Lache(Value);
+		}
+		// Other climbing states - ignore jump
 		return;
 	}
 
+	// Normal locomotion jump
 	Jump();
 }
 
@@ -239,7 +262,17 @@ void AClimbingCharacter::Input_Lache(const FInputActionValue& Value)
 	// Lock target and initiate Lache
 	LockedLacheTarget = LacheTarget;
 	LacheLaunchPosition = GetActorLocation();
-	LacheLaunchDirection = GetActorForwardVector();
+	
+	// Calculate launch direction based on movement input
+	// If no input, launch forward. If has input, blend forward with shimmy direction
+	FVector LaunchDir = GetActorForwardVector();
+	if (!FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		// Add horizontal shimmy component to launch direction
+		const FVector ShimmyDir = GetActorRightVector() * CurrentClimbMoveInput.X;
+		LaunchDir = (LaunchDir + ShimmyDir * 0.5f).GetSafeNormal(); // Blend 2:1 forward to shimmy
+	}
+	LacheLaunchDirection = LaunchDir;
 	LacheFlightTime = 0.0f;
 
 	// Auto-cinematic camera if enabled and target far enough
@@ -277,7 +310,19 @@ FClimbingDetectionResult AClimbingCharacter::CalculateLacheArc() const
 	}
 
 	const FVector LaunchOrigin = GetActorLocation();
-	const FVector ArcVelocity = GetActorForwardVector() * LacheLaunchSpeed;
+	
+	// Calculate launch direction based on movement input
+	// If no input, launch forward. If has input, blend forward with shimmy direction
+	FVector LaunchDir = GetActorForwardVector();
+	
+	if (!FMath::IsNearlyZero(CurrentClimbMoveInput.X))
+	{
+		// Add horizontal shimmy component to launch direction
+		const FVector ShimmyDir = GetActorRightVector() * CurrentClimbMoveInput.X;
+		LaunchDir = (LaunchDir + ShimmyDir * 0.5f).GetSafeNormal(); // Blend 2:1 forward to shimmy
+	}
+	
+	const FVector ArcVelocity = LaunchDir * LacheLaunchSpeed;
 	const float GravityZ = ClimbingMovement->GetGravityZ(); // Negative value - use directly, do not Abs
 
 	FCollisionQueryParams QueryParams;
