@@ -948,8 +948,17 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 		AddClimbingInputMappingContext();
 	}
 
-	// Update capsule for climbing states
-	if (NewState != EClimbingState::None && NewState != EClimbingState::Ragdoll)
+	const bool bUseAttachedClimbingCapsule =
+		NewState == EClimbingState::Hanging ||
+		NewState == EClimbingState::Shimmying ||
+		NewState == EClimbingState::BracedWall ||
+		NewState == EClimbingState::BracedShimmying ||
+		NewState == EClimbingState::OnLadder ||
+		NewState == EClimbingState::CornerTransition ||
+		NewState == EClimbingState::LadderTransition;
+
+	// Update capsule only for states where the pawn should stay attached to geometry.
+	if (bUseAttachedClimbingCapsule)
 	{
 		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 		{
@@ -1002,6 +1011,27 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 	{
 	case EClimbingState::Hanging:
 		{
+			if (ClimbingMovement)
+			{
+				ClimbingMovement->StopMovementImmediately();
+				ClimbingMovement->SetMovementMode(MOVE_Flying);
+				ClimbingMovement->Velocity = FVector::ZeroVector;
+			}
+
+	        // TODO: Remove once montages and motion warping is implemented
+			// Fallback placement so placeholder montages without warp windows still produce a stable hang.
+			if (DetectionResult.bValid)
+			{
+				const float WallStandOff = ClimbingCapsuleRadius + 8.0f;
+				const float HangVerticalOffset = ClimbingCapsuleHalfHeight + 12.0f;
+				const FVector HangLocation = DetectionResult.LedgePosition
+					- DetectionResult.SurfaceNormal * WallStandOff
+					- FVector::UpVector * HangVerticalOffset;
+
+				SetActorLocation(HangLocation);
+				SetActorRotation((-DetectionResult.SurfaceNormal).Rotation());
+			}
+
 			// Reset shimmy distance tracker
 			ContinuousShimmyDistance = 0.0f;
 			CommittedShimmyDir = 0.0f;
@@ -1052,6 +1082,13 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 
 	case EClimbingState::OnLadder:
 		{
+			if (ClimbingMovement)
+			{
+				ClimbingMovement->StopMovementImmediately();
+				ClimbingMovement->SetMovementMode(MOVE_Flying);
+				ClimbingMovement->Velocity = FVector::ZeroVector;
+			}
+
 			// Play enter animation based on entry direction
 			// For now, assume bottom entry
 			if (UAnimMontage* EnterMontage = GetMontageForSlot(EClimbingAnimationSlot::LadderEnterBottom))
@@ -1072,6 +1109,13 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 
 	case EClimbingState::BracedWall:
 		{
+			if (ClimbingMovement)
+			{
+				ClimbingMovement->StopMovementImmediately();
+				ClimbingMovement->SetMovementMode(MOVE_Flying);
+				ClimbingMovement->Velocity = FVector::ZeroVector;
+			}
+
 			ContinuousShimmyDistance = 0.0f;
 			CommittedShimmyDir = 0.0f;
 			
@@ -1086,6 +1130,17 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 
 	case EClimbingState::DroppingDown:
 		{
+			if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+			{
+				Capsule->SetCapsuleSize(OriginalCapsuleRadius, OriginalCapsuleHalfHeight);
+				Capsule->SetCollisionProfileName(OriginalCollisionProfile);
+			}
+
+			if (ClimbingMovement)
+			{
+				ClimbingMovement->SetMovementMode(MOVE_Falling);
+			}
+
 			if (UAnimMontage* DropMontage = GetMontageForSlot(EClimbingAnimationSlot::DropDown))
 			{
 				PlayAnimMontage(DropMontage);
@@ -1216,6 +1271,11 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 	if (NewState == EClimbingState::None)
 	{
 		RemoveClimbingInputMappingContext();
+
+		if (ClimbingMovement && ClimbingMovement->MovementMode != MOVE_Walking)
+		{
+			ClimbingMovement->SetMovementMode(MOVE_Walking);
+		}
 
 		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 		{
