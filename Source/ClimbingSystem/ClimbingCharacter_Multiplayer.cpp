@@ -72,6 +72,9 @@ void AClimbingCharacter::OnClimbingStateReplicated(EClimbingState OldState, ECli
 	case EClimbingState::BracedWall:
 		EntrySlot = EClimbingAnimationSlot::BracedIdle;
 		break;
+	case EClimbingState::BracedShimmying:
+		EntrySlot = (CommittedShimmyDir < 0) ? EClimbingAnimationSlot::BracedShimmyLeft : EClimbingAnimationSlot::BracedShimmyRight;
+		break;
 	case EClimbingState::OnLadder:
 		EntrySlot = EClimbingAnimationSlot::LadderIdle;
 		break;
@@ -93,6 +96,11 @@ void AClimbingCharacter::OnClimbingStateReplicated(EClimbingState OldState, ECli
 		break;
 	case EClimbingState::DroppingDown:
 		EntrySlot = EClimbingAnimationSlot::DropDown;
+		break;
+	case EClimbingState::LadderTransition:
+		// Determine exit direction based on replicated detection result validity
+		EntrySlot = ClimbingMovement && ClimbingMovement->LastValidatedDetectionResult.bValid ?
+			EClimbingAnimationSlot::LadderExitTop : EClimbingAnimationSlot::LadderExitBottom;
 		break;
 	case EClimbingState::Lache:
 		EntrySlot = EClimbingAnimationSlot::LacheLaunch;
