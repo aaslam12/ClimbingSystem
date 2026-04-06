@@ -303,6 +303,186 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 		}
 		break;
 
+	case EClimbingState::Lache:
+		{
+			// Play lache launch montage
+			if (UAnimMontage* LacheMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheLaunch))
+			{
+				PlayStateMontage(LacheMontage);
+			}
+			PlayClimbingSound(EClimbSoundType::LacheLaunchGrunt);
+		}
+		break;
+
+	case EClimbingState::LacheInAir:
+		{
+			// Play lache flight montage (looping)
+			if (UAnimMontage* FlightMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheFlight))
+			{
+				PlayStateMontage(FlightMontage);
+			}
+		}
+		break;
+
+	case EClimbingState::LacheCatch:
+		{
+			// Play lache catch montage
+			if (UAnimMontage* CatchMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheCatch))
+			{
+				PlayStateMontage(CatchMontage);
+			}
+			PlayClimbingSound(EClimbSoundType::LacheCatchImpact);
+		}
+		break;
+
+	case EClimbingState::LacheMiss:
+		{
+			// Play lache miss montage
+			if (UAnimMontage* MissMontage = GetMontageForSlot(EClimbingAnimationSlot::LacheMiss))
+			{
+				PlayStateMontage(MissMontage);
+			}
+		}
+		break;
+
+	case EClimbingState::ClimbingUp:
+		{
+			// Play climb up montage
+			if (UAnimMontage* ClimbUpMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUp))
+			{
+				PlayStateMontage(ClimbUpMontage);
+
+				// Set up motion warp target
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_ClimbUp");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+		}
+		break;
+
+	case EClimbingState::ClimbingUpCrouch:
+		{
+			// Play climb up crouch montage
+			if (UAnimMontage* ClimbUpCrouchMontage = GetMontageForSlot(EClimbingAnimationSlot::ClimbUpCrouch))
+			{
+				PlayStateMontage(ClimbUpCrouchMontage);
+
+				// Set up motion warp target
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_ClimbUpCrouch");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+		}
+		break;
+
+	case EClimbingState::CornerTransition:
+		{
+			// Determine inside/outside and left/right for montage selection
+			EClimbingAnimationSlot CornerSlot;
+			if (bCurrentCornerIsInside)
+			{
+				CornerSlot = (CommittedShimmyDir < 0.0f) ?
+					EClimbingAnimationSlot::CornerInsideLeft : EClimbingAnimationSlot::CornerInsideRight;
+			}
+			else
+			{
+				CornerSlot = (CommittedShimmyDir < 0.0f) ?
+					EClimbingAnimationSlot::CornerOutsideLeft : EClimbingAnimationSlot::CornerOutsideRight;
+			}
+
+			if (UAnimMontage* CornerMontage = GetMontageForSlot(CornerSlot))
+			{
+				PlayStateMontage(CornerMontage);
+
+				// Set up motion warp target for corner destination
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_Corner");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+
+			// Update animation instance with corner type
+			if (UClimbingAnimInstance* AnimInstance = CachedAnimInstance.Get())
+			{
+				AnimInstance->bIsInsideCorner = bCurrentCornerIsInside;
+			}
+		}
+		break;
+
+	case EClimbingState::LadderTransition:
+		{
+			// Determine exit direction - top or bottom
+			EClimbingAnimationSlot LadderExitSlot;
+			if (DetectionResult.bValid)
+			{
+				// Valid ledge means exiting at top
+				LadderExitSlot = EClimbingAnimationSlot::LadderExitTop;
+			}
+			else
+			{
+				// No ledge means exiting at bottom
+				LadderExitSlot = EClimbingAnimationSlot::LadderExitBottom;
+			}
+
+			if (UAnimMontage* LadderExitMontage = GetMontageForSlot(LadderExitSlot))
+			{
+				PlayStateMontage(LadderExitMontage);
+
+				// Set up motion warp target if exiting at top
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_LadderExit");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+		}
+		break;
+
+	case EClimbingState::Mantling:
+		{
+			// Select mantle animation based on obstacle height
+			// Calculate height difference between ledge and character feet
+			const float LedgeHeight = DetectionResult.bValid ? DetectionResult.LedgePosition.Z : GetActorLocation().Z;
+			const float CharacterFeetZ = GetActorLocation().Z - OriginalCapsuleHalfHeight;
+			const float MantleHeight = LedgeHeight - CharacterFeetZ;
+			
+			EClimbingAnimationSlot MantleSlot = (MantleHeight > MantleLowMaxHeight) ?
+				EClimbingAnimationSlot::MantleHigh : EClimbingAnimationSlot::MantleLow;
+
+			if (UAnimMontage* MantleMontage = GetMontageForSlot(MantleSlot))
+			{
+				PlayStateMontage(MantleMontage);
+
+				// Set up motion warp target for mantle destination
+				if (MotionWarping && DetectionResult.bValid)
+				{
+					FMotionWarpingTarget WarpTarget;
+					WarpTarget.Name = FName("WarpTarget_Mantle");
+					WarpTarget.Location = DetectionResult.LedgePosition;
+					WarpTarget.Rotation = (-DetectionResult.SurfaceNormal).Rotation();
+					MotionWarping->AddOrUpdateWarpTarget(WarpTarget);
+				}
+			}
+		}
+		break;
+
 	case EClimbingState::Ragdoll:
 		{
 			// Enable ragdoll physics
