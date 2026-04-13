@@ -27,6 +27,14 @@ void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
 		{
 			CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
 		}
+		
+#if !UE_BUILD_SHIPPING
+		if (bDrawDebug && !FMath::IsNearlyZero(MovementVector.X))
+		{
+			UE_LOG(LogClimbing, Verbose, TEXT("Input_Move: ClimbMoveInput X=%.2f Y=%.2f, CommittedShimmyDir=%.1f"),
+				CurrentClimbMoveInput.X, CurrentClimbMoveInput.Y, CommittedShimmyDir);
+		}
+#endif
 		return;
 	}
 
@@ -164,12 +172,12 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 				FCollisionShape::MakeSphere(LedgeDetectionRadius),
 				QueryParams))
 			{
-				// Check if it's climbable
-				const bool bHasClimbableTag = ForwardHit.Component.IsValid() && 
-					(ForwardHit.Component->ComponentHasTag(FName("Climbable")) || 
-					 !ForwardHit.Component->ComponentHasTag(FName("Unclimbable")));
+				// Check if it's explicitly marked as climbable (not unclimbable)
+				const bool bIsClimbable = ForwardHit.Component.IsValid() && 
+					ForwardHit.Component->ComponentHasTag(FName("Climbable")) &&
+					!ForwardHit.Component->ComponentHasTag(FName("Unclimbable"));
 
-				if (bHasClimbableTag)
+				if (bIsClimbable)
 				{
 					// Use the top of the hit as the ledge position
 					FVector LedgePos = ForwardHit.ImpactPoint;
@@ -178,7 +186,7 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 					const float CharacterFeetZ = CharacterLocation.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 					const float ObstacleHeight = LedgePos.Z - CharacterFeetZ;
 
-					// Check if it's in mantle height range
+					// Check if it's in mantle height range (must be low enough to mantle, not hang)
 					if (ObstacleHeight > MantleStepMaxHeight && ObstacleHeight <= MantleHighMaxHeight)
 					{
 						DetectionResult.bValid = true;
@@ -188,9 +196,24 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 						DetectionResult.ClearanceType = EClimbClearanceType::Full; // Assume full for mantles
 						DetectionResult.SurfaceTier = EClimbSurfaceTier::Climbable;
 
-						UE_LOG(LogClimbing, Log, TEXT("Mantle detection: Found obstacle at height %.1f cm"), ObstacleHeight);
+						UE_LOG(LogClimbing, Log, TEXT("Mantle detection: Found climbable obstacle at height %.1f cm (range: %.1f - %.1f)"), 
+							ObstacleHeight, MantleStepMaxHeight, MantleHighMaxHeight);
 					}
+#if !UE_BUILD_SHIPPING
+					else
+					{
+						UE_LOG(LogClimbing, Verbose, TEXT("Mantle detection: Obstacle height %.1f cm outside range (%.1f - %.1f)"),
+							ObstacleHeight, MantleStepMaxHeight, MantleHighMaxHeight);
+					}
+#endif
 				}
+#if !UE_BUILD_SHIPPING
+				else if (ForwardHit.Component.IsValid())
+				{
+					UE_LOG(LogClimbing, Verbose, TEXT("Mantle detection: Component '%s' not tagged as Climbable"),
+						*ForwardHit.Component->GetName());
+				}
+#endif
 			}
 		}
 
@@ -465,10 +488,10 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 
 	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
 
-	// Climb up is valid from Hanging
-	if (CurrentState != EClimbingState::Hanging)
+	// Climb up is valid from Hanging or Shimmying
+	if (CurrentState != EClimbingState::Hanging && CurrentState != EClimbingState::Shimmying)
 	{
-		UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Not in Hanging state (current: %s)"), *UEnum::GetValueAsString(CurrentState));
+		UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Not in Hanging/Shimmying state (current: %s)"), *UEnum::GetValueAsString(CurrentState));
 		return;
 	}
 
@@ -478,8 +501,16 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 		return;
 	}
 
-	// Check clearance from current detection result
-	const EClimbClearanceType Clearance = CurrentDetectionResult.ClearanceType;
+	// Re-run clearance check at current position to ensure it's still valid
+	// This is necessary because shimmy movement may have changed clearance availability
+	FClimbingDetectionResult FreshDetection = PerformLedgeDetection();
+	if (!FreshDetection.bValid)
+	{
+		UE_LOG(LogClimbing, Warning, TEXT("Input_ClimbUp: Current ledge detection is invalid!"));
+		return;
+	}
+
+	const EClimbClearanceType Clearance = FreshDetection.ClearanceType;
 
 	if (Clearance == EClimbClearanceType::None)
 	{
@@ -491,16 +522,18 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 	const EClimbingState ClimbUpState = (Clearance == EClimbClearanceType::Full) ?
 		EClimbingState::ClimbingUp : EClimbingState::ClimbingUpCrouch;
 
-	UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Transitioning to %s"), *UEnum::GetValueAsString(ClimbUpState));
+	UE_LOG(LogClimbing, Log, TEXT("Input_ClimbUp: Transitioning to %s with clearance type %s"), 
+		*UEnum::GetValueAsString(ClimbUpState),
+		*UEnum::GetValueAsString(Clearance));
 
 	if (HasAuthority())
 	{
-		TransitionToState(ClimbUpState, CurrentDetectionResult);
+		TransitionToState(ClimbUpState, FreshDetection);
 	}
 	else
 	{
 		PrePredictionPosition = GetActorLocation();
-		TransitionToState(ClimbUpState, CurrentDetectionResult);
+		TransitionToState(ClimbUpState, FreshDetection);
 		Server_AttemptClimbUp();
 	}
 }
@@ -570,11 +603,17 @@ void AClimbingCharacter::TickHangingState(float DeltaTime)
 			return;
 		}
 
-		// No corner - check if we can shimmy
-		if (CurrentDetectionResult.bValid)
+		// No corner - transition to shimmying
+		// Detection is refreshed every tick in TickClimbingState, so CurrentDetectionResult should be valid
+		if (!CurrentDetectionResult.bValid)
 		{
-			TransitionToState(EClimbingState::Shimmying, CurrentDetectionResult);
+#if !UE_BUILD_SHIPPING
+			UE_LOG(LogClimbing, Warning, TEXT("TickHangingState: Cannot shimmy - detection result is invalid!"));
+#endif
+			return;
 		}
+		
+		TransitionToState(EClimbingState::Shimmying, CurrentDetectionResult);
 	}
 }
 
