@@ -2,13 +2,20 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
 #include "Camera/PlayerCameraManager.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/PlayerController.h"
 
 TArray<TWeakObjectPtr<AClimbingCharacter>> AClimbingCharacter::ActiveClimbingCharacters;
+namespace
+{
+	constexpr uint8 IKLimbHandLeft = 1 << 0;
+	constexpr uint8 IKLimbHandRight = 1 << 1;
+	constexpr uint8 IKLimbFootLeft = 1 << 2;
+	constexpr uint8 IKLimbFootRight = 1 << 3;
+}
 
 void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
 {
@@ -20,8 +27,45 @@ void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
 
 	if (!ClimbingMovement)
 	{
+		SimulatedProxyIKAccumulator = 0.0f;
 		AnimInst->ResetAllIKWeights();
 		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	if (CurrentState == EClimbingState::None)
+	{
+		SimulatedProxyIKAccumulator = 0.0f;
+		AnimInst->ResetAllIKWeights();
+		return;
+	}
+
+	if (!IsLocallyControlled())
+	{
+		SimulatedProxyIKAccumulator += DeltaTime;
+		if (SimulatedProxyIKAccumulator < SimulatedProxyIKUpdateInterval)
+		{
+			return;
+		}
+
+		SimulatedProxyIKAccumulator = 0.0f;
+
+		if (!CurrentDetectionResult.bValid && ClimbingMovement->LastValidatedDetectionResult.bValid)
+		{
+			if (UPrimitiveComponent* ResolvedComponent = ResolveHitComponentFromNet(ClimbingMovement->LastValidatedDetectionResult))
+			{
+				CurrentDetectionResult.LedgePosition = FVector(ClimbingMovement->LastValidatedDetectionResult.LedgePosition);
+				CurrentDetectionResult.SurfaceNormal = FVector(ClimbingMovement->LastValidatedDetectionResult.SurfaceNormal);
+				CurrentDetectionResult.SurfaceTier = ClimbingMovement->LastValidatedDetectionResult.SurfaceTier;
+				CurrentDetectionResult.ClearanceType = ClimbingMovement->LastValidatedDetectionResult.ClearanceType;
+				CurrentDetectionResult.HitComponent = ResolvedComponent;
+				CurrentDetectionResult.bValid = true;
+			}
+		}
+	}
+	else
+	{
+		SimulatedProxyIKAccumulator = 0.0f;
 	}
 
 	// Check if we're within IK budget
@@ -31,7 +75,18 @@ void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
 		return;
 	}
 
-	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	const bool bStateRequiresDetection =
+		CurrentState == EClimbingState::Hanging ||
+		CurrentState == EClimbingState::Shimmying ||
+		CurrentState == EClimbingState::BracedWall ||
+		CurrentState == EClimbingState::BracedShimmying ||
+		CurrentState == EClimbingState::OnLadder;
+
+	if (bStateRequiresDetection && !CurrentDetectionResult.bValid)
+	{
+		AnimInst->ResetAllIKWeights();
+		return;
+	}
 
 	// State-specific IK handling
 	switch (CurrentState)
@@ -66,9 +121,6 @@ void AClimbingCharacter::UpdateClimbingIK(float DeltaTime)
 	// Update surface data in animation instance
 	AnimInst->CurrentSurfaceNormal = CurrentDetectionResult.SurfaceNormal;
 	AnimInst->CurrentLedgePosition = CurrentDetectionResult.LedgePosition;
-
-	// Call internal blend update
-	AnimInst->UpdateIKBlending(DeltaTime);
 }
 
 void AClimbingCharacter::UpdateLedgeHangIK(float DeltaTime, UClimbingAnimInstance* AnimInst)
@@ -84,13 +136,14 @@ void AClimbingCharacter::UpdateLedgeHangIK(float DeltaTime, UClimbingAnimInstanc
 	const FVector WallRight = FVector::CrossProduct(FVector::UpVector, WallNormal).GetSafeNormal();
 
 	// Hand offset from center
-	const float HandSpacing = 30.0f; // cm between hands
+	const float HandSpacing = HandIKSpacing * 0.5f;
+	const FVector IKOffset = HandIKOffset;
 
 	// Left hand target (ledge position offset left)
-	const FVector LeftHandTarget = LedgePos - WallRight * HandSpacing;
+	const FVector LeftHandTarget = LedgePos - WallRight * HandSpacing + IKOffset;
 
 	// Right hand target (ledge position offset right)
-	const FVector RightHandTarget = LedgePos + WallRight * HandSpacing;
+	const FVector RightHandTarget = LedgePos + WallRight * HandSpacing + IKOffset;
 
 	// Check reach distances
 	const FVector CharLocation = GetActorLocation();
@@ -112,14 +165,16 @@ void AClimbingCharacter::UpdateLedgeHangIK(float DeltaTime, UClimbingAnimInstanc
 			RightWeight = FMath::Max(0.0f, 1.0f - (RightHandDist - MaxReachDistance) / (IKFadeOutBlendTime * 100.0f));
 		}
 	}
+	LeftWeight = FMath::Clamp(LeftWeight, 0.0f, 1.0f);
+	RightWeight = FMath::Clamp(RightWeight, 0.0f, 1.0f);
 
 	// Set targets
 	AnimInst->IKTargetHandLeft = LeftHandTarget;
 	AnimInst->IKTargetHandRight = RightHandTarget;
 
 	// Set target weights (hands only for hanging, feet off)
-	AnimInst->TargetIKWeightHandLeft = LeftWeight;
-	AnimInst->TargetIKWeightHandRight = RightWeight;
+	AnimInst->TargetIKWeightHandLeft = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandLeft, LeftWeight);
+	AnimInst->TargetIKWeightHandRight = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandRight, RightWeight);
 	AnimInst->TargetIKWeightFootLeft = 0.0f;
 	AnimInst->TargetIKWeightFootRight = 0.0f;
 
@@ -145,8 +200,8 @@ void AClimbingCharacter::UpdateBracedWallIK(float DeltaTime, UClimbingAnimInstan
 	const FVector WallRight = FVector::CrossProduct(FVector::UpVector, WallNormal).GetSafeNormal();
 	const FVector WallUp = FVector::UpVector;
 
-	const float HandSpacing = 30.0f;
-	const float FootSpacing = 25.0f;
+	const float HandSpacing = HandIKSpacing * 0.5f;
+	const float FootSpacing = HandSpacing * 0.65f;
 	const float HandHeight = 80.0f;  // Hands higher on wall
 	const float FootHeight = -60.0f; // Feet lower on wall
 
@@ -178,10 +233,10 @@ void AClimbingCharacter::UpdateBracedWallIK(float DeltaTime, UClimbingAnimInstan
 	AnimInst->IKTargetFootRight = TraceToWall(RightFootTarget);
 
 	// All limbs active for braced
-	AnimInst->TargetIKWeightHandLeft = 1.0f;
-	AnimInst->TargetIKWeightHandRight = 1.0f;
-	AnimInst->TargetIKWeightFootLeft = 1.0f;
-	AnimInst->TargetIKWeightFootRight = 1.0f;
+	AnimInst->TargetIKWeightHandLeft = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandLeft, 1.0f);
+	AnimInst->TargetIKWeightHandRight = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandRight, 1.0f);
+	AnimInst->TargetIKWeightFootLeft = AnimInst->ApplyNotifyMaskToWeight(IKLimbFootLeft, 1.0f);
+	AnimInst->TargetIKWeightFootRight = AnimInst->ApplyNotifyMaskToWeight(IKLimbFootRight, 1.0f);
 
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug)
@@ -206,8 +261,8 @@ void AClimbingCharacter::UpdateLadderIK(float DeltaTime, UClimbingAnimInstance* 
 	const FVector LadderNormal = CurrentDetectionResult.SurfaceNormal;
 	const FVector LadderRight = FVector::CrossProduct(FVector::UpVector, LadderNormal).GetSafeNormal();
 
-	// Use default rung spacing (expose as UPROPERTY if needed)
-	const float RungSpacing = 30.0f; // cm between rungs
+	// Use configurable rung spacing
+	const float RungSpacing = FMath::Max(DefaultLadderRungSpacing, 1.0f);
 
 	// Calculate which rung the character is at
 	const float CharZ = GetActorLocation().Z;
@@ -221,8 +276,8 @@ void AClimbingCharacter::UpdateLadderIK(float DeltaTime, UClimbingAnimInstance* 
 	// Foot positions on rung below
 	const float FootZ = CurrentRungZ - RungSpacing * 0.5f;
 
-	const float HandSpacing = 20.0f;
-	const float FootSpacing = 15.0f;
+	const float HandSpacing = HandIKSpacing * 0.5f;
+	const float FootSpacing = HandSpacing * 0.75f;
 
 	// Calculate targets relative to ladder
 	AnimInst->IKTargetHandLeft = LadderPos + LadderRight * (-HandSpacing) + FVector(0, 0, HandZ - LadderPos.Z);
@@ -231,10 +286,10 @@ void AClimbingCharacter::UpdateLadderIK(float DeltaTime, UClimbingAnimInstance* 
 	AnimInst->IKTargetFootRight = LadderPos + LadderRight * FootSpacing + FVector(0, 0, FootZ - LadderPos.Z);
 
 	// All limbs active for ladder
-	AnimInst->TargetIKWeightHandLeft = 1.0f;
-	AnimInst->TargetIKWeightHandRight = 1.0f;
-	AnimInst->TargetIKWeightFootLeft = 1.0f;
-	AnimInst->TargetIKWeightFootRight = 1.0f;
+	AnimInst->TargetIKWeightHandLeft = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandLeft, 1.0f);
+	AnimInst->TargetIKWeightHandRight = AnimInst->ApplyNotifyMaskToWeight(IKLimbHandRight, 1.0f);
+	AnimInst->TargetIKWeightFootLeft = AnimInst->ApplyNotifyMaskToWeight(IKLimbFootLeft, 1.0f);
+	AnimInst->TargetIKWeightFootRight = AnimInst->ApplyNotifyMaskToWeight(IKLimbFootRight, 1.0f);
 
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug)

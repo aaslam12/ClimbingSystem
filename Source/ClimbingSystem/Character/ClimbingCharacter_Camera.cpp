@@ -2,7 +2,7 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
+#include "Movement/ClimbingMovementComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -25,6 +25,7 @@ void AClimbingCharacter::LockCameraToFrame(FVector Location, FRotator Rotation, 
 	{
 		OriginalTargetArmLength = CameraBoom->TargetArmLength;
 		OriginalSpringArmRotation = CameraBoom->GetRelativeRotation();
+		OriginalCameraBoomWorldLocation = CameraBoom->GetComponentLocation();
 	}
 
 	bCameraLocked = true;
@@ -158,6 +159,7 @@ void AClimbingCharacter::UpdateCameraLock(float DeltaTime)
 
 			// Restore original spring arm settings
 			CameraBoom->TargetArmLength = OriginalTargetArmLength;
+			CameraBoom->SetWorldLocation(OriginalCameraBoomWorldLocation);
 			CameraBoom->bEnableCameraLag = true;
 			CameraBoom->bEnableCameraRotationLag = true;
 		}
@@ -166,6 +168,8 @@ void AClimbingCharacter::UpdateCameraLock(float DeltaTime)
 			// Interpolate back to normal following
 			const float Alpha = 1.0f - (CameraReleaseBlendTime / CameraReleaseBlendTimeTotal);
 			CameraBoom->TargetArmLength = FMath::Lerp(0.0f, OriginalTargetArmLength, Alpha);
+			const FVector BlendLocation = FMath::Lerp(LockedCameraLocation, OriginalCameraBoomWorldLocation, Alpha);
+			CameraBoom->SetWorldLocation(BlendLocation);
 		}
 		return;
 	}
@@ -187,6 +191,8 @@ void AClimbingCharacter::UpdateCameraLock(float DeltaTime)
 			// Interpolate spring arm to create locked camera effect
 			// Reduce arm length to zero and control position directly
 			CameraBoom->TargetArmLength = FMath::Lerp(OriginalTargetArmLength, 0.0f, Alpha);
+			const FVector BlendLocation = FMath::Lerp(OriginalCameraBoomWorldLocation, LockedCameraLocation, Alpha);
+			CameraBoom->SetWorldLocation(BlendLocation);
 
 			// Set camera world position/rotation via spring arm control rotation
 			if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -201,6 +207,7 @@ void AClimbingCharacter::UpdateCameraLock(float DeltaTime)
 	{
 		// Lock complete - maintain locked position
 		CameraBoom->TargetArmLength = 0.0f;
+		CameraBoom->SetWorldLocation(LockedCameraLocation);
 
 		// Keep camera at locked rotation
 		if (APlayerController* PC = Cast<APlayerController>(GetController()))

@@ -2,8 +2,9 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 
 void AClimbingCharacter::OnClimbingStateReplicated(EClimbingState OldState, EClimbingState NewState)
 {
@@ -436,11 +437,20 @@ void AClimbingCharacter::Client_RejectStateTransition_Implementation()
 	PlayClimbingSound(EClimbSoundType::GrabFail);
 
 	// Lerp back to pre-prediction position
-	// Note: Full lerp implementation would require additional state tracking
-	// For now, snap back immediately
 	if (!PrePredictionPosition.IsNearlyZero())
 	{
-		SetActorLocation(PrePredictionPosition);
+		if (PredictionRollbackBlendOut > 0.0f)
+		{
+			bPredictionRollbackInProgress = true;
+			PredictionRollbackStart = GetActorLocation();
+			PredictionRollbackTarget = PrePredictionPosition;
+			PredictionRollbackElapsed = 0.0f;
+		}
+		else
+		{
+			SetActorLocation(PrePredictionPosition, false);
+			PrePredictionPosition = FVector::ZeroVector;
+		}
 	}
 
 	// Ensure we're in None state
@@ -475,4 +485,6 @@ void AClimbingCharacter::Client_ConfirmStateTransition_Implementation(EClimbingS
 
 	// Clear pre-prediction position
 	PrePredictionPosition = FVector::ZeroVector;
+	bPredictionRollbackInProgress = false;
+	PredictionRollbackElapsed = 0.0f;
 }

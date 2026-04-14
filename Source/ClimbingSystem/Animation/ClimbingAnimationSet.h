@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "ClimbingTypes.h"
+#include "Data/ClimbingTypes.h"
 #include "ClimbingAnimationSet.generated.h"
 
 /**

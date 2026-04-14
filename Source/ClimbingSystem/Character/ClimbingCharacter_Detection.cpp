@@ -2,8 +2,8 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingSurfaceData.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Data/ClimbingSurfaceData.h"
 #include "DrawDebugHelpers.h"
 
 FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetectionAtLocation(const FVector& Location) const

@@ -18,14 +18,17 @@
  *   ClimbingCharacter_Multiplayer.cpp   — server RPCs, client RPCs, replication
  *   ClimbingCharacter_Debug.cpp         — debug drawing and slot validation
  */
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "MotionWarpingComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 
 AClimbingCharacter::AClimbingCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UClimbingMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -66,6 +69,11 @@ void AClimbingCharacter::BeginPlay()
 		OriginalCapsuleHalfHeight = Capsule->GetUnscaledCapsuleHalfHeight();
 		OriginalCapsuleRadius = Capsule->GetUnscaledCapsuleRadius();
 		OriginalCollisionProfile = Capsule->GetCollisionProfileName();
+	}
+
+	if (CameraBoom)
+	{
+		OriginalCameraProbeSize = CameraBoom->ProbeSize;
 	}
 
 	// Cache animation instance
@@ -167,6 +175,8 @@ void AClimbingCharacter::PerformCleanup()
 	// 6. Remove ClimbingInputMappingContext from subsystem if present
 	RemoveClimbingInputMappingContext();
 	RemoveLocomotionInputMappingContext();
+	bClimbingIMCActive = false;
+	bLocomotionIMCActive = false;
 
 	// Clear timers
 	if (GetWorld())
@@ -193,6 +203,7 @@ void AClimbingCharacter::Tick(float DeltaTime)
 	{
 		UpdateCameraLock(DeltaTime);
 		UpdateCameraNudge(DeltaTime);
+		UpdatePredictionRollback(DeltaTime);
 	}
 
 	// Update coyote time
@@ -261,6 +272,8 @@ void AClimbingCharacter::PawnClientRestart()
 	Super::PawnClientRestart();
 
 	// Re-apply input contexts after possession/controller changes on the owning client.
+	bLocomotionIMCActive = false;
+	bClimbingIMCActive = false;
 	AddLocomotionInputMappingContext();
 
 	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
@@ -331,6 +344,26 @@ void AClimbingCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// Note: Most climbing replication is handled by UClimbingMovementComponent
-	// Character-level replication could be added here if needed
+	DOREPLIFETIME(AClimbingCharacter, CommittedShimmyDir);
+	DOREPLIFETIME(AClimbingCharacter, bCurrentCornerIsInside);
+}
+
+void AClimbingCharacter::UpdatePredictionRollback(float DeltaTime)
+{
+	if (!bPredictionRollbackInProgress || PredictionRollbackBlendOut <= 0.0f)
+	{
+		return;
+	}
+
+	PredictionRollbackElapsed += DeltaTime;
+	const float Alpha = FMath::Clamp(PredictionRollbackElapsed / PredictionRollbackBlendOut, 0.0f, 1.0f);
+	const FVector NewLocation = FMath::Lerp(PredictionRollbackStart, PredictionRollbackTarget, Alpha);
+	SetActorLocation(NewLocation, false);
+
+	if (Alpha >= 1.0f)
+	{
+		bPredictionRollbackInProgress = false;
+		PrePredictionPosition = FVector::ZeroVector;
+		PredictionRollbackElapsed = 0.0f;
+	}
 }

@@ -2,17 +2,21 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
-#include "ClimbingAnimationSet.h"
-#include "ClimbingSurfaceData.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
+#include "Animation/ClimbingAnimationSet.h"
+#include "Data/ClimbingSurfaceData.h"
 #include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/AssetManager.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/StreamableManager.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "MotionWarpingComponent.h"
+#include "TimerManager.h"
 
 void AClimbingCharacter::TransitionToState(EClimbingState NewState, const FClimbingDetectionResult& DetectionResult)
 {
@@ -66,6 +70,11 @@ void AClimbingCharacter::TransitionToState(EClimbingState NewState, const FClimb
 
 void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDetectionResult& DetectionResult)
 {
+	if (UClimbingAnimInstance* AnimInstance = CachedAnimInstance.Get())
+	{
+		AnimInstance->ResetIKNotifyMask();
+	}
+
 	// Handle IMC on first climbing state entry
 	if (IsLocallyControlled() && ClimbingMovement && ClimbingMovement->PreviousClimbingState == EClimbingState::None && NewState != EClimbingState::None)
 	{
@@ -168,7 +177,6 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 					const FVector HangLocation = DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * WallStandOff - FVector::UpVector * HangVerticalOffset;
 					SetActorLocation(HangLocation, false);
 					ClimbingMovement->SetAnchor(DetectionResult.HitComponent.Get(), GetActorLocation());
-					SetBase(DetectionResult.HitComponent.Get());
 				}
 			}
 
@@ -755,7 +763,7 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 
 		if (CameraBoom && IsLocallyControlled())
 		{
-			CameraBoom->ProbeSize = 12.0f;
+			CameraBoom->ProbeSize = OriginalCameraProbeSize;
 		}
 
 		CurrentSurfaceData.Reset();
@@ -773,11 +781,12 @@ void AClimbingCharacter::TickClimbingState(float DeltaTime)
 	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
 
 	// Update detection during active climbing states (every tick)
-	if (CurrentState == EClimbingState::Hanging ||
+	if (IsLocallyControlled() &&
+		(CurrentState == EClimbingState::Hanging ||
 		CurrentState == EClimbingState::Shimmying ||
 		CurrentState == EClimbingState::BracedWall ||
 		CurrentState == EClimbingState::BracedShimmying ||
-		CurrentState == EClimbingState::OnLadder)
+		CurrentState == EClimbingState::OnLadder))
 	{
 		CurrentDetectionResult = PerformLedgeDetection();
 		if (!CurrentDetectionResult.bValid)
@@ -828,8 +837,8 @@ void AClimbingCharacter::TickClimbingState(float DeltaTime)
 		break;
 	}
 
-	// Update IK if we have a valid detection result
-	if (CurrentDetectionResult.bValid)
+	// Update IK for active climb states. Proxies can recover from failed confirmation traces here.
+	if (CurrentState != EClimbingState::None && CurrentState != EClimbingState::Ragdoll)
 	{
 		UpdateClimbingIK(DeltaTime);
 	}
@@ -946,7 +955,7 @@ UAnimMontage* AClimbingCharacter::GetMontageForSlot(EClimbingAnimationSlot Slot)
 
 void AClimbingCharacter::AddClimbingInputMappingContext()
 {
-	if (!IsLocallyControlled() || !ClimbingInputMappingContext)
+	if (!IsLocallyControlled() || !ClimbingInputMappingContext || bClimbingIMCActive)
 	{
 		return;
 	}
@@ -958,6 +967,7 @@ void AClimbingCharacter::AddClimbingInputMappingContext()
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
 			{
 				Subsystem->AddMappingContext(ClimbingInputMappingContext, ClimbingIMCPriority);
+				bClimbingIMCActive = true;
 			}
 		}
 	}
@@ -965,7 +975,7 @@ void AClimbingCharacter::AddClimbingInputMappingContext()
 
 void AClimbingCharacter::AddLocomotionInputMappingContext()
 {
-	if (!IsLocallyControlled() || !LocomotionInputMappingContext)
+	if (!IsLocallyControlled() || !LocomotionInputMappingContext || bLocomotionIMCActive)
 	{
 		return;
 	}
@@ -977,6 +987,7 @@ void AClimbingCharacter::AddLocomotionInputMappingContext()
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
 			{
 				Subsystem->AddMappingContext(LocomotionInputMappingContext, 0);
+				bLocomotionIMCActive = true;
 			}
 		}
 	}
@@ -984,7 +995,7 @@ void AClimbingCharacter::AddLocomotionInputMappingContext()
 
 void AClimbingCharacter::RemoveClimbingInputMappingContext()
 {
-	if (!IsLocallyControlled() || !ClimbingInputMappingContext)
+	if (!IsLocallyControlled() || !ClimbingInputMappingContext || !bClimbingIMCActive)
 	{
 		return;
 	}
@@ -999,11 +1010,13 @@ void AClimbingCharacter::RemoveClimbingInputMappingContext()
 			}
 		}
 	}
+
+	bClimbingIMCActive = false;
 }
 
 void AClimbingCharacter::RemoveLocomotionInputMappingContext()
 {
-	if (!IsLocallyControlled() || !LocomotionInputMappingContext)
+	if (!IsLocallyControlled() || !LocomotionInputMappingContext || !bLocomotionIMCActive)
 	{
 		return;
 	}
@@ -1018,6 +1031,8 @@ void AClimbingCharacter::RemoveLocomotionInputMappingContext()
 			}
 		}
 	}
+
+	bLocomotionIMCActive = false;
 }
 
 void AClimbingCharacter::OnClimbUpMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)

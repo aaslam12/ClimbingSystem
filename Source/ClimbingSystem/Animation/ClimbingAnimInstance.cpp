@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "ClimbingAnimInstance.h"
-#include "ClimbingCharacter.h"
+#include "Character/ClimbingCharacter.h"
 
 UClimbingAnimInstance::UClimbingAnimInstance()
 {
@@ -41,6 +41,37 @@ void UClimbingAnimInstance::ResetAllIKWeights()
 	TargetIKWeightHandRight = 0.0f;
 	TargetIKWeightFootLeft = 0.0f;
 	TargetIKWeightFootRight = 0.0f;
+}
+
+void UClimbingAnimInstance::ResetIKNotifyMask()
+{
+	bHasIKNotifyMask = false;
+	IKNotifyEnabledMask = 0;
+}
+
+void UClimbingAnimInstance::SetIKNotifyLimbState(int32 LimbMask, bool bEnable)
+{
+	bHasIKNotifyMask = true;
+
+	const uint8 Mask = static_cast<uint8>(FMath::Clamp(LimbMask, 0, 255));
+	if (bEnable)
+	{
+		IKNotifyEnabledMask |= Mask;
+	}
+	else
+	{
+		IKNotifyEnabledMask &= ~Mask;
+	}
+}
+
+float UClimbingAnimInstance::ApplyNotifyMaskToWeight(uint8 LimbBit, float ProposedWeight) const
+{
+	if (!bHasIKNotifyMask)
+	{
+		return ProposedWeight;
+	}
+
+	return (IKNotifyEnabledMask & LimbBit) != 0 ? ProposedWeight : 0.0f;
 }
 
 float UClimbingAnimInstance::BlendIKWeight(float CurrentWeight, float TargetWeight, float DeltaTime, float BlendTime)

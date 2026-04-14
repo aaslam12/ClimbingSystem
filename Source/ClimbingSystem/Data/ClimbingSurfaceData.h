@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/EngineTypes.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ClimbingTypes.h"
 #include "ClimbingSurfaceData.generated.h"
 

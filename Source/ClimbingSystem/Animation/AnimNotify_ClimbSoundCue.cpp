@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "AnimNotify_ClimbSoundCue.h"
-#include "ClimbingCharacter.h"
+#include "Character/ClimbingCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 

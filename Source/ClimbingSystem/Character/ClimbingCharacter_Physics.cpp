@@ -2,9 +2,12 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
+#include "Animation/AnimTypes.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "TimerManager.h"
 
 void AClimbingCharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,
 	bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)

@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "ClimbingTypes.h"
+#include "Data/ClimbingTypes.h"
 #include "InputActionValue.h"
 #include "ClimbingCharacter.generated.h"
 
@@ -1051,7 +1051,8 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UClimbingAnimationSet> CurrentAnimationSetOverride;
 
-	/** Committed shimmy direction with hysteresis. */
+	/** Committed shimmy direction with hysteresis. Replicated for proxy slot selection. */
+	UPROPERTY(Replicated)
 	float CommittedShimmyDir = 0.0f;
 
 	/** Current climb move input value. */
@@ -1114,6 +1115,12 @@ protected:
 	/** Original spring arm relative rotation before lock. */
 	FRotator OriginalSpringArmRotation = FRotator::ZeroRotator;
 
+	/** Original spring arm world location before lock. */
+	FVector OriginalCameraBoomWorldLocation = FVector::ZeroVector;
+
+	/** Original spring arm probe size before climbing. */
+	float OriginalCameraProbeSize = 12.0f;
+
 	/** Original capsule half-height before climbing. */
 	float OriginalCapsuleHalfHeight = 0.0f;
 
@@ -1144,11 +1151,30 @@ protected:
 	/** Coyote time remaining. */
 	float CoyoteTimeRemaining = 0.0f;
 
-	/** Inside corner flag for current corner transition. */
+	/** Inside corner flag for current corner transition. Replicated for proxy slot selection. */
+	UPROPERTY(Replicated)
 	bool bCurrentCornerIsInside = false;
 
 	/** Simulated proxy IK update accumulator. */
 	float SimulatedProxyIKAccumulator = 0.0f;
+
+	/** Whether climbing IMC is currently applied to the local subsystem. */
+	bool bClimbingIMCActive = false;
+
+	/** Whether locomotion IMC is currently applied to the local subsystem. */
+	bool bLocomotionIMCActive = false;
+
+	/** Whether local rollback interpolation is in progress. */
+	bool bPredictionRollbackInProgress = false;
+
+	/** Source location for rollback interpolation. */
+	FVector PredictionRollbackStart = FVector::ZeroVector;
+
+	/** Target location for rollback interpolation. */
+	FVector PredictionRollbackTarget = FVector::ZeroVector;
+
+	/** Elapsed time of rollback interpolation. */
+	float PredictionRollbackElapsed = 0.0f;
 
 	// ========================================================================
 	// Additional Helper Functions
@@ -1171,6 +1197,9 @@ protected:
 
 	/** Performs ledge detection centered at a specific location (for Lache targeting). */
 	FClimbingDetectionResult PerformLedgeDetectionAtLocation(const FVector& Location) const;
+
+	/** Updates local client rollback interpolation after a rejected prediction. */
+	void UpdatePredictionRollback(float DeltaTime);
 
 	// ========================================================================
 	// Physics Helpers

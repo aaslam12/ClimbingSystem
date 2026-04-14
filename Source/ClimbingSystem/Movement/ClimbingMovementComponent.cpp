@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "ClimbingMovementComponent.h"
-#include "ClimbingCharacter.h"
+#include "Character/ClimbingCharacter.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Character.h"
 
@@ -169,21 +169,12 @@ float UClimbingMovementComponent::CalculateEffectiveLadderSpeed(bool bSprinting,
 
 float UClimbingMovementComponent::CalculateOverhangPenalty(const FVector& SurfaceNormal) const
 {
-	// Calculate angle from vertical (world up)
-	// Dot product with up vector gives cos(angle from up)
-	// angle = acos(dot) gives angle from up
-	// We want angle from vertical wall (90 degrees from up)
-	
+	// OverhangAngleDeg = angle(SurfaceNormal, WorldUp) - 90
+	// Vertical wall: 90 - 90 = 0
+	// Overhangs: > 0
 	const float DotUp = FVector::DotProduct(SurfaceNormal, FVector::UpVector);
-	const float AngleFromUp = FMath::RadiansToDegrees(FMath::Acos(FMath::Abs(DotUp)));
-	
-	// Angle from vertical = 90 - AngleFromUp
-	// Overhang angle = how far past vertical the surface tilts toward player
-	// For a vertical wall, DotUp = 0, AngleFromUp = 90, OverhangAngle = 0
-	// For an overhang, DotUp < 0 (normal points somewhat down), meaning surface faces up
-	
-	// Calculate overhang: negative DotUp means the surface is an overhang
-	const float OverhangAngleDeg = (DotUp < 0.0f) ? -FMath::RadiansToDegrees(FMath::Asin(DotUp)) : 0.0f;
+	const float AngleFromUpDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(DotUp, -1.0f, 1.0f)));
+	const float OverhangAngleDeg = AngleFromUpDeg - 90.0f;
 
 	if (OverhangAngleDeg <= OverhangPenaltyStartAngle)
 	{

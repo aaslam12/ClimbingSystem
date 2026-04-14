@@ -3,6 +3,7 @@
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 void AClimbingCharacter::PlayClimbingSound(EClimbSoundType SoundType)
 {

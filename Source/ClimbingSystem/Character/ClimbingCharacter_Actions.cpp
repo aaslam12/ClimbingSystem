@@ -2,12 +2,14 @@
 
 #include "ClimbingCharacter.h"
 // Part of AClimbingCharacter — see ClimbingCharacter.h
-#include "ClimbingMovementComponent.h"
-#include "ClimbingAnimInstance.h"
-#include "ClimbingSurfaceData.h"
+#include "Movement/ClimbingMovementComponent.h"
+#include "Animation/ClimbingAnimInstance.h"
+#include "Data/ClimbingSurfaceData.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Controller.h"
+#include "TimerManager.h"
 
 void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
 {
@@ -17,24 +19,10 @@ void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
 		return;
 	}
 
-	// If climbing, update climb move input instead of using AddMovementInput
+	// Climbing movement is handled exclusively by IA_ClimbMove bindings.
+	// Avoid double-writing CurrentClimbMoveInput from both IA_Move and IA_ClimbMove.
 	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
 	{
-		CurrentClimbMoveInput = MovementVector;
-		
-		// Update committed shimmy direction with hysteresis
-		if (FMath::Abs(CurrentClimbMoveInput.X) > ShimmyDirectionDeadzone)
-		{
-			CommittedShimmyDir = FMath::Sign(CurrentClimbMoveInput.X);
-		}
-		
-#if !UE_BUILD_SHIPPING
-		if (bDrawDebug && !FMath::IsNearlyZero(MovementVector.X))
-		{
-			UE_LOG(LogClimbing, Verbose, TEXT("Input_Move: ClimbMoveInput X=%.2f Y=%.2f, CommittedShimmyDir=%.1f"),
-				CurrentClimbMoveInput.X, CurrentClimbMoveInput.Y, CommittedShimmyDir);
-		}
-#endif
 		return;
 	}
 

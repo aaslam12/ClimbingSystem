@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
-#include "ClimbingTypes.h"
+#include "Data/ClimbingTypes.h"
 #include "AnimNotify_ClimbSoundCue.generated.h"
 
 class AClimbingCharacter;

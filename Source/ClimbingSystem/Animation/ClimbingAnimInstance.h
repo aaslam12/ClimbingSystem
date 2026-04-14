@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "ClimbingTypes.h"
+#include "Data/ClimbingTypes.h"
 #include "ClimbingAnimInstance.generated.h"
 
 class AClimbingCharacter;
@@ -198,6 +198,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Climbing|IK")
 	static float BlendIKWeight(float CurrentWeight, float TargetWeight, float DeltaTime, float BlendTime);
 
+	/** Clears notify-driven limb gating and returns to state-driven IK weighting. */
+	void ResetIKNotifyMask();
+
+	/** Enables/disables notify-driven IK gating for the provided limb bitmask. */
+	void SetIKNotifyLimbState(int32 LimbMask, bool bEnable);
+
+	/** Applies notify-driven limb gating to a proposed IK target weight. */
+	float ApplyNotifyMaskToWeight(uint8 LimbBit, float ProposedWeight) const;
+
 protected:
 	/** Cached reference to the owning climbing character. */
 	UPROPERTY(BlueprintReadOnly, Category = "Climbing")
@@ -208,6 +217,12 @@ protected:
 	float TargetIKWeightHandRight = 0.0f;
 	float TargetIKWeightFootLeft = 0.0f;
 	float TargetIKWeightFootRight = 0.0f;
+
+	/** True once any enable/disable notify has explicitly gated IK limbs. */
+	bool bHasIKNotifyMask = false;
+
+	/** Bitmask of limbs currently allowed by IK enable/disable notifies. */
+	uint8 IKNotifyEnabledMask = 0;
 
 	/** Updates IK weight blending based on targets and blend times. */
 	void UpdateIKBlending(float DeltaSeconds);

@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "ClimbingTypes.h"
+#include "Data/ClimbingTypes.h"
 #include "ClimbingMovementComponent.generated.h"
 
 /**

@@ -2,8 +2,8 @@
 
 #include "AnimNotify_EnableClimbIK.h"
 #include "ClimbingAnimInstance.h"
-#include "ClimbingCharacter.h"
-#include "ClimbingTypes.h"
+#include "Character/ClimbingCharacter.h"
+#include "Data/ClimbingTypes.h"
 #include "Components/SkeletalMeshComponent.h"
 
 UAnimNotify_EnableClimbIK::UAnimNotify_EnableClimbIK()
@@ -32,6 +32,7 @@ void UAnimNotify_EnableClimbIK::Notify(USkeletalMeshComponent* MeshComp, UAnimSe
 	// Set target weights based on limb mask
 	// The AnimInstance will blend to these targets over IKBlendTimeIn
 	const EClimbIKLimbMask Mask = static_cast<EClimbIKLimbMask>(LimbMask);
+	AnimInstance->SetIKNotifyLimbState(LimbMask, true);
 
 	if (EnumHasAnyFlags(Mask, EClimbIKLimbMask::HandLeft))
 	{
