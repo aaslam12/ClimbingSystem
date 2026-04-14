@@ -63,4 +63,54 @@ bool FClimbingCharacterReplicationContractTest::RunTest(const FString& Parameter
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FClimbingCharacterClimbUpDetectionSelectionPrefersFreshTest,
+	"ClimbingSystem.Character.Contracts.ClimbUpDetectionSelection.PrefersFresh",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FClimbingCharacterClimbUpDetectionSelectionPrefersFreshTest::RunTest(const FString& Parameters)
+{
+	FClimbingDetectionResult FreshDetection;
+	FreshDetection.bValid = true;
+	FreshDetection.LedgePosition = FVector(10.0f, 20.0f, 30.0f);
+	FreshDetection.ClearanceType = EClimbClearanceType::Full;
+
+	FClimbingDetectionResult CachedDetection;
+	CachedDetection.bValid = true;
+	CachedDetection.LedgePosition = FVector(100.0f, 0.0f, 0.0f);
+	CachedDetection.ClearanceType = EClimbClearanceType::CrouchOnly;
+
+	const FClimbingDetectionResult SelectedDetection = AClimbingCharacter::SelectClimbUpDetectionResult(
+		FreshDetection, CachedDetection);
+
+	TestTrue(TEXT("Selected detection should be valid"), SelectedDetection.bValid);
+	TestEqual(TEXT("Fresh detection should be preferred"), SelectedDetection.LedgePosition, FreshDetection.LedgePosition);
+	TestEqual(TEXT("Fresh clearance should be preserved"), SelectedDetection.ClearanceType, FreshDetection.ClearanceType);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FClimbingCharacterClimbUpDetectionSelectionFallsBackToCachedTest,
+	"ClimbingSystem.Character.Contracts.ClimbUpDetectionSelection.FallsBackToCached",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FClimbingCharacterClimbUpDetectionSelectionFallsBackToCachedTest::RunTest(const FString& Parameters)
+{
+	FClimbingDetectionResult FreshDetection;
+	FreshDetection.bValid = false;
+
+	FClimbingDetectionResult CachedDetection;
+	CachedDetection.bValid = true;
+	CachedDetection.LedgePosition = FVector(-40.0f, 5.0f, 80.0f);
+	CachedDetection.ClearanceType = EClimbClearanceType::CrouchOnly;
+
+	const FClimbingDetectionResult SelectedDetection = AClimbingCharacter::SelectClimbUpDetectionResult(
+		FreshDetection, CachedDetection);
+
+	TestTrue(TEXT("Cached detection should be used when fresh detection is invalid"), SelectedDetection.bValid);
+	TestEqual(TEXT("Fallback should keep cached ledge position"), SelectedDetection.LedgePosition, CachedDetection.LedgePosition);
+	TestEqual(TEXT("Fallback should keep cached clearance"), SelectedDetection.ClearanceType, CachedDetection.ClearanceType);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

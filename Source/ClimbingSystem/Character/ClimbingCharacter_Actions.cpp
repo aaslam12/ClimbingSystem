@@ -19,11 +19,28 @@ void AClimbingCharacter::Input_Move(const FInputActionValue& Value)
 		return;
 	}
 
-	// Climbing movement is handled exclusively by IA_ClimbMove bindings.
-	// Avoid double-writing CurrentClimbMoveInput from both IA_Move and IA_ClimbMove.
-	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None)
+	// Climbing movement is handled exclusively by IA_ClimbMove while attached to climb geometry.
+	// When in detached/falling climb states (e.g. DroppingDown), allow locomotion air-control input.
+	if (ClimbingMovement)
 	{
-		return;
+		const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+		const bool bUsesAttachedClimbInput =
+			CurrentState == EClimbingState::Hanging ||
+			CurrentState == EClimbingState::Shimmying ||
+			CurrentState == EClimbingState::BracedWall ||
+			CurrentState == EClimbingState::BracedShimmying ||
+			CurrentState == EClimbingState::OnLadder ||
+			CurrentState == EClimbingState::CornerTransition ||
+			CurrentState == EClimbingState::LadderTransition ||
+			CurrentState == EClimbingState::ClimbingUp ||
+			CurrentState == EClimbingState::ClimbingUpCrouch ||
+			CurrentState == EClimbingState::Mantling ||
+			CurrentState == EClimbingState::LacheCatch;
+
+		if (bUsesAttachedClimbInput)
+		{
+			return;
+		}
 	}
 
 	// Normal locomotion movement
@@ -87,8 +104,12 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 		return;
 	}
 
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	const bool bCanAttemptGrabFromDetachedState =
+		CurrentState == EClimbingState::None || CurrentState == EClimbingState::DroppingDown;
+
 	// Handle coyote time re-grab
-	if (bEnableCoyoteTime && CoyoteTimeRemaining > 0.0f && ClimbingMovement->CurrentClimbingState == EClimbingState::None)
+	if (bEnableCoyoteTime && CoyoteTimeRemaining > 0.0f && bCanAttemptGrabFromDetachedState)
 	{
 		// Re-run detection
 		FClimbingDetectionResult DetectionResult = PerformLedgeDetection();
@@ -118,8 +139,8 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 		}
 	}
 
-	// Normal grab from ground/falling
-	if (ClimbingMovement->CurrentClimbingState == EClimbingState::None)
+	// Normal grab from ground/falling or intentional drop state
+	if (bCanAttemptGrabFromDetachedState)
 	{
 		// Use cached detection result or re-run if falling
 		FClimbingDetectionResult DetectionResult = CurrentDetectionResult;
@@ -466,6 +487,13 @@ FClimbingDetectionResult AClimbingCharacter::CalculateLacheArc() const
 	return Result;
 }
 
+FClimbingDetectionResult AClimbingCharacter::SelectClimbUpDetectionResult(
+	const FClimbingDetectionResult& FreshDetection,
+	const FClimbingDetectionResult& CachedDetection)
+{
+	return FreshDetection.bValid ? FreshDetection : CachedDetection;
+}
+
 void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 {
 	if (!ClimbingMovement)
@@ -489,16 +517,27 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 		return;
 	}
 
-	// Re-run clearance check at current position to ensure it's still valid
-	// This is necessary because shimmy movement may have changed clearance availability
-	FClimbingDetectionResult FreshDetection = PerformLedgeDetection();
-	if (!FreshDetection.bValid)
+	// Re-run ledge detection for up-to-date clearance, but tolerate transient misses while attached.
+	const FClimbingDetectionResult FreshDetection = PerformLedgeDetection();
+	FClimbingDetectionResult ClimbUpDetection = SelectClimbUpDetectionResult(FreshDetection, CurrentDetectionResult);
+
+	// Final fallback for replicated sessions where local cache may be temporarily invalid.
+	if (!ClimbUpDetection.bValid && ClimbingMovement->LastValidatedDetectionResult.bValid)
+	{
+		ClimbUpDetection.LedgePosition = FVector(ClimbingMovement->LastValidatedDetectionResult.LedgePosition);
+		ClimbUpDetection.SurfaceNormal = FVector(ClimbingMovement->LastValidatedDetectionResult.SurfaceNormal);
+		ClimbUpDetection.SurfaceTier = ClimbingMovement->LastValidatedDetectionResult.SurfaceTier;
+		ClimbUpDetection.ClearanceType = ClimbingMovement->LastValidatedDetectionResult.ClearanceType;
+		ClimbUpDetection.bValid = true;
+	}
+
+	if (!ClimbUpDetection.bValid)
 	{
 		UE_LOG(LogClimbing, Warning, TEXT("Input_ClimbUp: Current ledge detection is invalid!"));
 		return;
 	}
 
-	const EClimbClearanceType Clearance = FreshDetection.ClearanceType;
+	const EClimbClearanceType Clearance = ClimbUpDetection.ClearanceType;
 
 	if (Clearance == EClimbClearanceType::None)
 	{
@@ -516,12 +555,12 @@ void AClimbingCharacter::Input_ClimbUp(const FInputActionValue& Value)
 
 	if (HasAuthority())
 	{
-		TransitionToState(ClimbUpState, FreshDetection);
+		TransitionToState(ClimbUpState, ClimbUpDetection);
 	}
 	else
 	{
 		PrePredictionPosition = GetActorLocation();
-		TransitionToState(ClimbUpState, FreshDetection);
+		TransitionToState(ClimbUpState, ClimbUpDetection);
 		Server_AttemptClimbUp();
 	}
 }
@@ -968,7 +1007,13 @@ void AClimbingCharacter::TickLacheInAirState(float DeltaTime)
 	}
 
 	// Move character along arc
-	SetActorLocation(ExpectedPosition);
+	FHitResult SweepHit;
+	SetActorLocation(ExpectedPosition, true, &SweepHit, ETeleportType::None);
+	if (SweepHit.bBlockingHit)
+	{
+		TransitionToState(EClimbingState::LacheMiss, FClimbingDetectionResult());
+		return;
+	}
 
 	// Rotate to face target
 	const FVector DirectionToTarget = (LockedLacheTarget.LedgePosition - GetActorLocation()).GetSafeNormal();

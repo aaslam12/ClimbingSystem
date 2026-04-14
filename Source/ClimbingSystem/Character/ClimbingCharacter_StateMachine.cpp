@@ -712,7 +712,15 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 	case EClimbingState::BracedShimmying:
 	case EClimbingState::OnLadder:
 		{
-			if (TargetState == EClimbingState::None || TargetState == EClimbingState::DroppingDown || TargetState == EClimbingState::Ragdoll)
+			const bool bShouldDetachFromSurface =
+				TargetState == EClimbingState::None ||
+				TargetState == EClimbingState::DroppingDown ||
+				TargetState == EClimbingState::Lache ||
+				TargetState == EClimbingState::LacheInAir ||
+				TargetState == EClimbingState::LacheMiss ||
+				TargetState == EClimbingState::Ragdoll;
+
+			if (bShouldDetachFromSurface)
 			{
 				SetBase(nullptr);
 
@@ -788,10 +796,15 @@ void AClimbingCharacter::TickClimbingState(float DeltaTime)
 		CurrentState == EClimbingState::BracedShimmying ||
 		CurrentState == EClimbingState::OnLadder))
 	{
-		CurrentDetectionResult = PerformLedgeDetection();
-		if (!CurrentDetectionResult.bValid)
+		FClimbingDetectionResult RefreshedDetection = PerformLedgeDetection();
+		if (!RefreshedDetection.bValid)
 		{
-			CurrentDetectionResult = PerformLadderDetection();
+			RefreshedDetection = PerformLadderDetection();
+		}
+
+		if (RefreshedDetection.bValid)
+		{
+			CurrentDetectionResult = RefreshedDetection;
 		}
 
 		// Owning client during active climbing: use local scan HitComponent directly
@@ -827,6 +840,15 @@ void AClimbingCharacter::TickClimbingState(float DeltaTime)
 
 	case EClimbingState::LacheInAir:
 		TickLacheInAirState(DeltaTime);
+		break;
+
+	case EClimbingState::DroppingDown:
+		// Intentional drops should quickly return to locomotion/falling control
+		// so the player can air-control and attempt re-grabs before landing.
+		if (ClimbingMovement->IsFalling())
+		{
+			TransitionToState(EClimbingState::None, FClimbingDetectionResult());
+		}
 		break;
 
 	case EClimbingState::Ragdoll:

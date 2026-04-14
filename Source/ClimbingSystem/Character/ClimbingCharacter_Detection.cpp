@@ -129,6 +129,13 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 	const FVector CharacterLocation = GetActorLocation();
 	const FVector ForwardVector = GetActorForwardVector();
 	const FVector UpVector = FVector::UpVector;
+	const EClimbingState CurrentState = ClimbingMovement ? ClimbingMovement->CurrentClimbingState : EClimbingState::None;
+	const bool bIsAttachedLedgeState =
+		CurrentState == EClimbingState::Hanging ||
+		CurrentState == EClimbingState::Shimmying;
+	const float ForwardTraceHeightOffset = bIsAttachedLedgeState
+		? FMath::Max(ClimbingCapsuleHalfHeight * 0.6f, LedgeDetectionRadius * 2.0f)
+		: (LedgeDetectionVerticalReach * 0.5f);
 
 	// Collision query parameters
 	FCollisionQueryParams QueryParams;
@@ -137,7 +144,7 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 	QueryParams.bReturnPhysicalMaterial = true;
 
 	// Step 1: Forward trace to find wall
-	const FVector ForwardTraceStart = CharacterLocation + UpVector * LedgeDetectionVerticalReach * 0.5f;
+	const FVector ForwardTraceStart = CharacterLocation + UpVector * ForwardTraceHeightOffset;
 	const FVector ForwardTraceEnd = ForwardTraceStart + ForwardVector * LedgeDetectionForwardReach;
 
 	FHitResult ForwardHit;
@@ -237,10 +244,12 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 		return Result;
 	}
 
-	// Find the best ledge hit - prefer the one closest to character's current height when climbing
-	// This prevents jumping between stacked ledges during shimmy
+	// Find the best ledge hit - while attached to a ledge, prefer the previous ledge height
+	// to avoid bouncing between stacked surfaces during hanging/shimmy re-scans.
 	const bool bIsCurrentlyClimbing = ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None;
-	const float CurrentCharacterZ = CharacterLocation.Z;
+	const float PreferredLedgeZ = (bIsAttachedLedgeState && CurrentDetectionResult.bValid)
+		? CurrentDetectionResult.LedgePosition.Z
+		: CharacterLocation.Z;
 
 	FHitResult* BestDownHit = nullptr;
 	float BestScore = TNumericLimits<float>::Max();
@@ -258,8 +267,8 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 		float Score;
 		if (bIsCurrentlyClimbing)
 		{
-			// When climbing, prefer ledges at similar height to current position
-			Score = FMath::Abs(DownHit.ImpactPoint.Z - CurrentCharacterZ);
+			// When climbing, prefer ledges at similar height to the active ledge if available.
+			Score = FMath::Abs(DownHit.ImpactPoint.Z - PreferredLedgeZ);
 		}
 		else
 		{
@@ -310,9 +319,10 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 	);
 
 #if !UE_BUILD_SHIPPING
-	if (bDrawDebug && bClearanceBlocked)
+	const bool bInActiveClimbingState = ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None;
+	if (bDrawDebug && bInActiveClimbingState && bClearanceBlocked)
 	{
-		UE_LOG(LogClimbing, Log, TEXT("Clearance blocked by: %s at distance %.1f"), 
+		UE_LOG(LogClimbing, Verbose, TEXT("Clearance blocked by: %s at distance %.1f"), 
 			ClearanceHit.Component.IsValid() ? *ClearanceHit.Component->GetName() : TEXT("Unknown"),
 			ClearanceHit.Distance);
 	}
@@ -337,9 +347,9 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 		ClearanceType = bCrouchBlocked ? EClimbClearanceType::None : EClimbClearanceType::CrouchOnly;
 		
 #if !UE_BUILD_SHIPPING
-		if (bDrawDebug)
+		if (bDrawDebug && bInActiveClimbingState)
 		{
-			UE_LOG(LogClimbing, Log, TEXT("Crouch clearance: %s"), bCrouchBlocked ? TEXT("BLOCKED") : TEXT("Available"));
+			UE_LOG(LogClimbing, Verbose, TEXT("Crouch clearance: %s"), bCrouchBlocked ? TEXT("BLOCKED") : TEXT("Available"));
 		}
 #endif
 	}

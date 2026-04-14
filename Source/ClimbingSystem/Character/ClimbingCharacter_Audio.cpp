@@ -48,7 +48,7 @@ USoundBase* AClimbingCharacter::GetResolvedSound(EClimbSoundType SoundType)
 	if (!SoftPtr || SoftPtr->IsNull())
 	{
 		// No entry for this sound type - log warning once and cache null
-		UE_LOG(LogClimbing, Warning, TEXT("ClimbingSystem: Sound type '%s' not assigned in ClimbingSounds map on '%s'. Caching null - sound will not play."),
+		UE_LOG(LogClimbing, Verbose, TEXT("ClimbingSystem: Sound type '%s' not assigned in ClimbingSounds map on '%s'. Caching null - sound will not play."),
 			*UEnum::GetValueAsString(SoundType), *GetName());
 		ResolvedSounds.Add(SoundType, nullptr);
 		return nullptr;

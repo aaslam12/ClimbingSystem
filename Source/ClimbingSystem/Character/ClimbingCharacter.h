@@ -768,6 +768,14 @@ public:
 	FClimbingDetectionResult PerformLedgeDetection() const;
 
 	/**
+	 * Chooses the best climb-up detection result.
+	 * Prefers a fresh scan and falls back to cached state data when the fresh scan temporarily misses.
+	 */
+	static FClimbingDetectionResult SelectClimbUpDetectionResult(
+		const FClimbingDetectionResult& FreshDetection,
+		const FClimbingDetectionResult& CachedDetection);
+
+	/**
 	 * Performs ladder detection from current position.
 	 * @return Detection result with validity and hit information
 	 */

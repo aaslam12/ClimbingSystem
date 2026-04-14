@@ -134,6 +134,13 @@ bool FClimbingStateTransitionRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Hanging -> Lache should be valid"), Movement->IsValidStateTransition(EClimbingState::Lache));
 	TestFalse(TEXT("Hanging -> OnLadder should be invalid"), Movement->IsValidStateTransition(EClimbingState::OnLadder));
 
+	Movement->SetClimbingState(EClimbingState::LacheInAir);
+	TestTrue(TEXT("LacheInAir -> LacheCatch should be valid"), Movement->IsValidStateTransition(EClimbingState::LacheCatch));
+	TestTrue(TEXT("LacheInAir -> LacheMiss should be valid"), Movement->IsValidStateTransition(EClimbingState::LacheMiss));
+
+	Movement->SetClimbingState(EClimbingState::LacheMiss);
+	TestTrue(TEXT("LacheMiss -> None should be valid for landing recovery"), Movement->IsValidStateTransition(EClimbingState::None));
+
 	Movement->SetClimbingState(EClimbingState::OnLadder);
 	TestTrue(TEXT("OnLadder -> LadderTransition should be valid"), Movement->IsValidStateTransition(EClimbingState::LadderTransition));
 	TestFalse(TEXT("OnLadder -> ClimbingUp should be invalid"), Movement->IsValidStateTransition(EClimbingState::ClimbingUp));

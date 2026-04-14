@@ -362,6 +362,7 @@ void AClimbingCharacter::Server_AttemptClimbUp_Implementation()
 	// Validate we're in a state that allows climb up
 	if (!ClimbingMovement ||
 		(ClimbingMovement->CurrentClimbingState != EClimbingState::Hanging &&
+		 ClimbingMovement->CurrentClimbingState != EClimbingState::Shimmying &&
 		 ClimbingMovement->CurrentClimbingState != EClimbingState::BracedWall))
 	{
 		Client_RejectStateTransition();
@@ -369,8 +370,20 @@ void AClimbingCharacter::Server_AttemptClimbUp_Implementation()
 	}
 
 	// Check clearance
-	const EClimbClearanceType Clearance = CurrentDetectionResult.bValid ?
-		CurrentDetectionResult.ClearanceType : EClimbClearanceType::None;
+	const FClimbingDetectionResult FreshDetection = PerformLedgeDetection();
+	FClimbingDetectionResult ClimbUpDetection = SelectClimbUpDetectionResult(FreshDetection, CurrentDetectionResult);
+
+	if (!ClimbUpDetection.bValid && ClimbingMovement->LastValidatedDetectionResult.bValid)
+	{
+		ClimbUpDetection.LedgePosition = FVector(ClimbingMovement->LastValidatedDetectionResult.LedgePosition);
+		ClimbUpDetection.SurfaceNormal = FVector(ClimbingMovement->LastValidatedDetectionResult.SurfaceNormal);
+		ClimbUpDetection.SurfaceTier = ClimbingMovement->LastValidatedDetectionResult.SurfaceTier;
+		ClimbUpDetection.ClearanceType = ClimbingMovement->LastValidatedDetectionResult.ClearanceType;
+		ClimbUpDetection.bValid = true;
+	}
+
+	const EClimbClearanceType Clearance = ClimbUpDetection.bValid ?
+		ClimbUpDetection.ClearanceType : EClimbClearanceType::None;
 
 	if (Clearance == EClimbClearanceType::None)
 	{
@@ -384,7 +397,7 @@ void AClimbingCharacter::Server_AttemptClimbUp_Implementation()
 		EClimbingState::ClimbingUp : EClimbingState::ClimbingUpCrouch;
 
 	// Transition
-	TransitionToState(TargetState, CurrentDetectionResult);
+	TransitionToState(TargetState, ClimbUpDetection);
 
 	// Confirm to client
 	Client_ConfirmStateTransition(TargetState);

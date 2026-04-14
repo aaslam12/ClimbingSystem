@@ -260,8 +260,16 @@ void AClimbingCharacter::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
 
-	// When landing while in DroppingDown state, transition back to None
-	if (ClimbingMovement && ClimbingMovement->CurrentClimbingState == EClimbingState::DroppingDown)
+	if (!ClimbingMovement)
+	{
+		return;
+	}
+
+	const EClimbingState CurrentState = ClimbingMovement->CurrentClimbingState;
+	if (CurrentState == EClimbingState::DroppingDown ||
+		CurrentState == EClimbingState::Lache ||
+		CurrentState == EClimbingState::LacheInAir ||
+		CurrentState == EClimbingState::LacheMiss)
 	{
 		TransitionToState(EClimbingState::None, FClimbingDetectionResult());
 	}
