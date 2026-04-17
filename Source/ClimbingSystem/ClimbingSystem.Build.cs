@@ -16,7 +16,8 @@ public class ClimbingSystem : ModuleRules
 			Path.Combine(ModuleDirectory, "Core"),
 			Path.Combine(ModuleDirectory, "Data"),
 			Path.Combine(ModuleDirectory, "Movement"),
-			Path.Combine(ModuleDirectory, "Tests")
+			Path.Combine(ModuleDirectory, "Tests"),
+			Path.Combine(ModuleDirectory, "Tests", "Helpers")
 		});
 	
 		PublicDependencyModuleNames.AddRange(new string[] { 

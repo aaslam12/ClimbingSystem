@@ -133,7 +133,8 @@ void AClimbingCharacter::UpdateLedgeHangIK(float DeltaTime, UClimbingAnimInstanc
 	// Calculate hand positions on ledge
 	const FVector LedgePos = CurrentDetectionResult.LedgePosition;
 	const FVector WallNormal = CurrentDetectionResult.SurfaceNormal;
-	const FVector WallRight = FVector::CrossProduct(FVector::UpVector, WallNormal).GetSafeNormal();
+	// Use wall-relative right in character-handedness order so left/right limbs do not swap.
+	const FVector WallRight = FVector::CrossProduct(WallNormal, FVector::UpVector).GetSafeNormal();
 
 	// Hand offset from center
 	const float HandSpacing = HandIKSpacing * 0.5f;
@@ -197,7 +198,7 @@ void AClimbingCharacter::UpdateBracedWallIK(float DeltaTime, UClimbingAnimInstan
 	// Calculate all four limb positions for braced wall
 	const FVector WallPos = CurrentDetectionResult.LedgePosition;
 	const FVector WallNormal = CurrentDetectionResult.SurfaceNormal;
-	const FVector WallRight = FVector::CrossProduct(FVector::UpVector, WallNormal).GetSafeNormal();
+	const FVector WallRight = FVector::CrossProduct(WallNormal, FVector::UpVector).GetSafeNormal();
 	const FVector WallUp = FVector::UpVector;
 
 	const float HandSpacing = HandIKSpacing * 0.5f;
@@ -259,7 +260,7 @@ void AClimbingCharacter::UpdateLadderIK(float DeltaTime, UClimbingAnimInstance* 
 	// Calculate rung positions based on character height and rung spacing
 	const FVector LadderPos = CurrentDetectionResult.LedgePosition;
 	const FVector LadderNormal = CurrentDetectionResult.SurfaceNormal;
-	const FVector LadderRight = FVector::CrossProduct(FVector::UpVector, LadderNormal).GetSafeNormal();
+	const FVector LadderRight = FVector::CrossProduct(LadderNormal, FVector::UpVector).GetSafeNormal();
 
 	// Use configurable rung spacing
 	const float RungSpacing = FMath::Max(DefaultLadderRungSpacing, 1.0f);

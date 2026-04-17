@@ -416,13 +416,21 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			}
 			else
 			{
-				UE_LOG(LogClimbing, Error, TEXT("ClimbingUp: No montage assigned for ClimbUp slot! Character will be stuck. Assign montage in Animation Set or use auto-transition fallback."));
-				// Fallback: teleport to ledge and exit climbing
-				if (DetectionResult.bValid && MotionWarping)
+				UE_LOG(LogClimbing, Warning, TEXT("ClimbingUp: No montage assigned for ClimbUp slot. Using top-out fallback."));
+				// Fallback: place the capsule in a safe standing position on top of the ledge.
+				if (DetectionResult.bValid)
 				{
-					SetActorLocation(DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * 50.0f);
+					const FVector SafeTopOutLocation =
+						DetectionResult.LedgePosition +
+						DetectionResult.SurfaceNormal * (OriginalCapsuleRadius + 8.0f) +
+						FVector::UpVector * OriginalCapsuleHalfHeight;
+
+					FHitResult SweepHit;
+					SetActorLocation(SafeTopOutLocation, true, &SweepHit, ETeleportType::TeleportPhysics);
+					SetActorRotation((-DetectionResult.SurfaceNormal).Rotation());
 				}
-				// Auto-exit after short delay
+
+				// Auto-exit after short delay to restore locomotion state.
 				if (GetWorld())
 				{
 					FTimerHandle UnusedHandle;
@@ -432,7 +440,7 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 						{
 							TransitionToState(EClimbingState::None, FClimbingDetectionResult());
 						}
-					}, 0.5f, false);
+					}, 0.05f, false);
 				}
 			}
 		}
@@ -466,13 +474,21 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 			}
 			else
 			{
-				UE_LOG(LogClimbing, Error, TEXT("ClimbingUpCrouch: No montage assigned for ClimbUpCrouch slot! Character will be stuck. Assign montage in Animation Set or use auto-transition fallback."));
-				// Fallback: teleport to ledge and exit climbing
-				if (DetectionResult.bValid && MotionWarping)
+				UE_LOG(LogClimbing, Warning, TEXT("ClimbingUpCrouch: No montage assigned for ClimbUpCrouch slot. Using top-out fallback."));
+				// Fallback: place the capsule in a safe standing position on top of the ledge.
+				if (DetectionResult.bValid)
 				{
-					SetActorLocation(DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * 50.0f);
+					const FVector SafeTopOutLocation =
+						DetectionResult.LedgePosition +
+						DetectionResult.SurfaceNormal * (OriginalCapsuleRadius + 8.0f) +
+						FVector::UpVector * (OriginalCapsuleHalfHeight * 0.75f);
+
+					FHitResult SweepHit;
+					SetActorLocation(SafeTopOutLocation, true, &SweepHit, ETeleportType::TeleportPhysics);
+					SetActorRotation((-DetectionResult.SurfaceNormal).Rotation());
 				}
-				// Auto-exit after short delay
+
+				// Auto-exit after short delay to restore locomotion state.
 				if (GetWorld())
 				{
 					FTimerHandle UnusedHandle;
@@ -482,7 +498,7 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 						{
 							TransitionToState(EClimbingState::None, FClimbingDetectionResult());
 						}
-					}, 0.5f, false);
+					}, 0.05f, false);
 				}
 			}
 		}
@@ -715,6 +731,9 @@ void AClimbingCharacter::OnStateExit(EClimbingState OldState)
 			const bool bShouldDetachFromSurface =
 				TargetState == EClimbingState::None ||
 				TargetState == EClimbingState::DroppingDown ||
+				TargetState == EClimbingState::ClimbingUp ||
+				TargetState == EClimbingState::ClimbingUpCrouch ||
+				TargetState == EClimbingState::Mantling ||
 				TargetState == EClimbingState::Lache ||
 				TargetState == EClimbingState::LacheInAir ||
 				TargetState == EClimbingState::LacheMiss ||
