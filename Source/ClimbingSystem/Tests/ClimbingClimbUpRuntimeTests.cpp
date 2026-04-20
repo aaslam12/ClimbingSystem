@@ -3,10 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test-only access for Input_ClimbUp and cached detection state.
-#define protected public
 #include "Character/ClimbingCharacter.h"
-#undef protected
 
 #include "InputActionValue.h"
 #include "Movement/ClimbingMovementComponent.h"
@@ -33,7 +30,7 @@ static FClimbingDetectionResult MakeDetection(EClimbClearanceType Clearance)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeClimbUpSelectsFullClearanceStateTest,
 	"ClimbingSystem.Character.Runtime.ClimbUpSelectsFullClearanceState",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeClimbUpSelectsFullClearanceStateTest::RunTest(const FString& Parameters)
 {
@@ -58,10 +55,10 @@ bool FClimbingRuntimeClimbUpSelectsFullClearanceStateTest::RunTest(const FString
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->CurrentDetectionResult = MakeDetection(EClimbClearanceType::Full);
+	Character->TestCurrentDetectionResult() = MakeDetection(EClimbClearanceType::Full);
 
 	const FInputActionValue Pressed(true);
-	Character->Input_ClimbUp(Pressed);
+	Character->TestInput_ClimbUp(Pressed);
 
 	TestEqual(TEXT("ClimbUp runtime: full clearance should transition to ClimbingUp"),
 		Movement->CurrentClimbingState, EClimbingState::ClimbingUp);
@@ -77,7 +74,7 @@ bool FClimbingRuntimeClimbUpSelectsFullClearanceStateTest::RunTest(const FString
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeClimbUpSelectsCrouchClearanceStateTest,
 	"ClimbingSystem.Character.Runtime.ClimbUpSelectsCrouchClearanceState",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeClimbUpSelectsCrouchClearanceStateTest::RunTest(const FString& Parameters)
 {
@@ -102,10 +99,10 @@ bool FClimbingRuntimeClimbUpSelectsCrouchClearanceStateTest::RunTest(const FStri
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->CurrentDetectionResult = MakeDetection(EClimbClearanceType::CrouchOnly);
+	Character->TestCurrentDetectionResult() = MakeDetection(EClimbClearanceType::CrouchOnly);
 
 	const FInputActionValue Pressed(true);
-	Character->Input_ClimbUp(Pressed);
+	Character->TestInput_ClimbUp(Pressed);
 
 	TestEqual(TEXT("ClimbUp runtime: crouch-only clearance should transition to ClimbingUpCrouch"),
 		Movement->CurrentClimbingState, EClimbingState::ClimbingUpCrouch);
@@ -121,7 +118,7 @@ bool FClimbingRuntimeClimbUpSelectsCrouchClearanceStateTest::RunTest(const FStri
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeClimbUpBlockedNoClearanceTest,
 	"ClimbingSystem.Character.Runtime.ClimbUpBlockedNoClearance",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeClimbUpBlockedNoClearanceTest::RunTest(const FString& Parameters)
 {
@@ -146,10 +143,10 @@ bool FClimbingRuntimeClimbUpBlockedNoClearanceTest::RunTest(const FString& Param
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->CurrentDetectionResult = MakeDetection(EClimbClearanceType::None);
+	Character->TestCurrentDetectionResult() = MakeDetection(EClimbClearanceType::None);
 
 	const FInputActionValue Pressed(true);
-	Character->Input_ClimbUp(Pressed);
+	Character->TestInput_ClimbUp(Pressed);
 
 	TestEqual(TEXT("ClimbUp runtime: no-clearance path should keep state in Hanging"),
 		Movement->CurrentClimbingState, EClimbingState::Hanging);
@@ -165,7 +162,7 @@ bool FClimbingRuntimeClimbUpBlockedNoClearanceTest::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeClimbUpUsesLastValidatedFallbackTest,
 	"ClimbingSystem.Character.Runtime.ClimbUpUsesLastValidatedFallback",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeClimbUpUsesLastValidatedFallbackTest::RunTest(const FString& Parameters)
 {
@@ -190,7 +187,7 @@ bool FClimbingRuntimeClimbUpUsesLastValidatedFallbackTest::RunTest(const FString
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->CurrentDetectionResult.Reset();
+	Character->TestCurrentDetectionResult().Reset();
 
 	Movement->LastValidatedDetectionResult.bValid = true;
 	Movement->LastValidatedDetectionResult.LedgePosition = FVector(150.0f, 0.0f, 130.0f);
@@ -199,7 +196,7 @@ bool FClimbingRuntimeClimbUpUsesLastValidatedFallbackTest::RunTest(const FString
 	Movement->LastValidatedDetectionResult.ClearanceType = EClimbClearanceType::CrouchOnly;
 
 	const FInputActionValue Pressed(true);
-	Character->Input_ClimbUp(Pressed);
+	Character->TestInput_ClimbUp(Pressed);
 
 	TestEqual(TEXT("ClimbUp runtime: valid replicated fallback with crouch clearance should transition to ClimbingUpCrouch"),
 		Movement->CurrentClimbingState, EClimbingState::ClimbingUpCrouch);
@@ -215,7 +212,7 @@ bool FClimbingRuntimeClimbUpUsesLastValidatedFallbackTest::RunTest(const FString
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeClimbUpRejectedFromInvalidStateTest,
 	"ClimbingSystem.Character.Runtime.ClimbUpRejectedFromInvalidState",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeClimbUpRejectedFromInvalidStateTest::RunTest(const FString& Parameters)
 {
@@ -240,10 +237,10 @@ bool FClimbingRuntimeClimbUpRejectedFromInvalidStateTest::RunTest(const FString&
 	}
 
 	Movement->SetClimbingState(EClimbingState::None);
-	Character->CurrentDetectionResult = MakeDetection(EClimbClearanceType::Full);
+	Character->TestCurrentDetectionResult() = MakeDetection(EClimbClearanceType::Full);
 
 	const FInputActionValue Pressed(true);
-	Character->Input_ClimbUp(Pressed);
+	Character->TestInput_ClimbUp(Pressed);
 
 	TestEqual(TEXT("ClimbUp runtime: invalid-state invocation should remain in None"),
 		Movement->CurrentClimbingState, EClimbingState::None);

@@ -3,10 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test-only access for Input_Lache, TickLacheInAirState and Lache internals.
-#define protected public
 #include "Character/ClimbingCharacter.h"
-#undef protected
 
 #include "Components/BoxComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -64,7 +61,7 @@ static FSpawnedLacheTarget SpawnClimbableLacheTarget(UWorld* World)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeLacheNoTargetStaysHangingTest,
 	"ClimbingSystem.Actions.Lache.Runtime.NoTargetStaysHanging",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeLacheNoTargetStaysHangingTest::RunTest(const FString& Parameters)
 {
@@ -89,13 +86,13 @@ bool FClimbingRuntimeLacheNoTargetStaysHangingTest::RunTest(const FString& Param
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->LockedLacheTarget.Reset();
-	Character->Input_Lache(FInputActionValue(true));
+	Character->TestLockedLacheTarget().Reset();
+	Character->TestInput_Lache(FInputActionValue(true));
 
 	TestEqual(TEXT("Lache runtime: no-target lache attempt should keep state in Hanging"),
 		Movement->CurrentClimbingState, EClimbingState::Hanging);
 	TestFalse(TEXT("Lache runtime: no-target lache attempt should keep LockedLacheTarget invalid"),
-		Character->LockedLacheTarget.bValid);
+		Character->TestLockedLacheTarget().bValid);
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -108,7 +105,7 @@ bool FClimbingRuntimeLacheNoTargetStaysHangingTest::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeLacheValidTargetTransitionsToLacheTest,
 	"ClimbingSystem.Actions.Lache.Runtime.ValidTargetTransitionsToLache",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeLacheValidTargetTransitionsToLacheTest::RunTest(const FString& Parameters)
 {
@@ -144,12 +141,12 @@ bool FClimbingRuntimeLacheValidTargetTransitionsToLacheTest::RunTest(const FStri
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->Input_Lache(FInputActionValue(true));
+	Character->TestInput_Lache(FInputActionValue(true));
 
 	TestEqual(TEXT("Lache runtime: valid arc target should transition to Lache"),
 		Movement->CurrentClimbingState, EClimbingState::Lache);
 	TestTrue(TEXT("Lache runtime: valid arc target should lock a valid lache target"),
-		Character->LockedLacheTarget.bValid);
+		Character->TestLockedLacheTarget().bValid);
 
 	Target.Actor->Destroy();
 	Character->Destroy();
@@ -163,7 +160,7 @@ bool FClimbingRuntimeLacheValidTargetTransitionsToLacheTest::RunTest(const FStri
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeLacheDirectionalInputBlendsLaunchDirectionTest,
 	"ClimbingSystem.Actions.Lache.Runtime.DirectionalInputBlendsLaunchDirection",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeLacheDirectionalInputBlendsLaunchDirectionTest::RunTest(const FString& Parameters)
 {
@@ -199,13 +196,13 @@ bool FClimbingRuntimeLacheDirectionalInputBlendsLaunchDirectionTest::RunTest(con
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->Input_ClimbMove(FInputActionValue(FVector2D(1.0f, 0.0f)));
-	Character->Input_Lache(FInputActionValue(true));
+	Character->TestInput_ClimbMove(FInputActionValue(FVector2D(1.0f, 0.0f)));
+	Character->TestInput_Lache(FInputActionValue(true));
 
 	TestEqual(TEXT("Lache runtime: successful lache attempt should enter Lache state"),
 		Movement->CurrentClimbingState, EClimbingState::Lache);
 	TestTrue(TEXT("Lache runtime: positive horizontal input should introduce a positive rightward launch component"),
-		Character->LacheLaunchDirection.Y > 0.0f);
+		Character->TestLacheLaunchDirection().Y > 0.0f);
 
 	Target.Actor->Destroy();
 	Character->Destroy();
@@ -219,7 +216,7 @@ bool FClimbingRuntimeLacheDirectionalInputBlendsLaunchDirectionTest::RunTest(con
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeLacheInAirInvalidTargetMissesTest,
 	"ClimbingSystem.Actions.Lache.Runtime.InAirInvalidTargetMisses",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeLacheInAirInvalidTargetMissesTest::RunTest(const FString& Parameters)
 {
@@ -244,8 +241,8 @@ bool FClimbingRuntimeLacheInAirInvalidTargetMissesTest::RunTest(const FString& P
 	}
 
 	Movement->SetClimbingState(EClimbingState::LacheInAir);
-	Character->LockedLacheTarget.Reset();
-	Character->TickLacheInAirState(0.016f);
+	Character->TestLockedLacheTarget().Reset();
+	Character->TestTickLacheInAirState(0.016f);
 
 	TestEqual(TEXT("Lache runtime: invalid locked target should transition LacheInAir to LacheMiss"),
 		Movement->CurrentClimbingState, EClimbingState::LacheMiss);
@@ -261,7 +258,7 @@ bool FClimbingRuntimeLacheInAirInvalidTargetMissesTest::RunTest(const FString& P
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeLacheInAirCatchesWithinRadiusTest,
 	"ClimbingSystem.Actions.Lache.Runtime.InAirCatchesWithinRadius",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeLacheInAirCatchesWithinRadiusTest::RunTest(const FString& Parameters)
 {
@@ -286,15 +283,15 @@ bool FClimbingRuntimeLacheInAirCatchesWithinRadiusTest::RunTest(const FString& P
 	}
 
 	Movement->SetClimbingState(EClimbingState::LacheInAir);
-	Character->LacheLaunchPosition = Character->GetActorLocation();
-	Character->LacheLaunchDirection = FVector::ForwardVector;
+	Character->TestLacheLaunchPosition() = Character->GetActorLocation();
+	Character->TestLacheLaunchDirection() = FVector::ForwardVector;
 	Character->LacheLaunchSpeed = 1200.0f;
-	Character->LacheFlightTime = 0.0f;
-	Character->LockedLacheTarget = FClimbingDetectionResult();
-	Character->LockedLacheTarget.LedgePosition = Character->GetActorLocation();
-	Character->LockedLacheTarget.bValid = true;
+	Character->TestLacheFlightTime() = 0.0f;
+	Character->TestLockedLacheTarget() = FClimbingDetectionResult();
+	Character->TestLockedLacheTarget().LedgePosition = Character->GetActorLocation();
+	Character->TestLockedLacheTarget().bValid = true;
 
-	Character->TickLacheInAirState(0.0f);
+	Character->TestTickLacheInAirState(0.0f);
 
 	TestEqual(TEXT("Lache runtime: target at expected position should transition LacheInAir to LacheCatch"),
 		Movement->CurrentClimbingState, EClimbingState::LacheCatch);

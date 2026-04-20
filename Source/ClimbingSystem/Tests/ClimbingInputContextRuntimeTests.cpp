@@ -3,10 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test-only access to protected IMC lifecycle methods/flags.
-#define protected public
 #include "Character/ClimbingCharacter.h"
-#undef protected
 
 #include "InputMappingContext.h"
 #include "Movement/ClimbingMovementComponent.h"
@@ -19,7 +16,7 @@
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimeAddClimbingRequiresLocalControlTest,
 	"ClimbingSystem.Input.Runtime.AddClimbing.RequiresLocalControl",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimeAddClimbingRequiresLocalControlTest::RunTest(const FString& Parameters)
 {
@@ -35,13 +32,13 @@ bool FClimbingInputRuntimeAddClimbingRequiresLocalControlTest::RunTest(const FSt
 	}
 
 	Character->ClimbingInputMappingContext = NewObject<UInputMappingContext>(Character);
-	Character->bClimbingIMCActive = false;
+	Character->TestClimbingIMCActive() = false;
 	TestFalse(TEXT("Input runtime: spawned test character should start non-local in automation world"),
 		Character->IsLocallyControlled());
 
-	Character->AddClimbingInputMappingContext();
+	Character->TestAddClimbingInputMappingContext();
 	TestFalse(TEXT("Input runtime: AddClimbingInputMappingContext should not activate IMC when pawn is not locally controlled"),
-		Character->bClimbingIMCActive);
+		Character->TestClimbingIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -54,7 +51,7 @@ bool FClimbingInputRuntimeAddClimbingRequiresLocalControlTest::RunTest(const FSt
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimeAddLocomotionRequiresLocalControlTest,
 	"ClimbingSystem.Input.Runtime.AddLocomotion.RequiresLocalControl",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimeAddLocomotionRequiresLocalControlTest::RunTest(const FString& Parameters)
 {
@@ -70,11 +67,11 @@ bool FClimbingInputRuntimeAddLocomotionRequiresLocalControlTest::RunTest(const F
 	}
 
 	Character->LocomotionInputMappingContext = NewObject<UInputMappingContext>(Character);
-	Character->bLocomotionIMCActive = false;
+	Character->TestLocomotionIMCActive() = false;
 
-	Character->AddLocomotionInputMappingContext();
+	Character->TestAddLocomotionInputMappingContext();
 	TestFalse(TEXT("Input runtime: AddLocomotionInputMappingContext should not activate IMC when pawn is not locally controlled"),
-		Character->bLocomotionIMCActive);
+		Character->TestLocomotionIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -87,7 +84,7 @@ bool FClimbingInputRuntimeAddLocomotionRequiresLocalControlTest::RunTest(const F
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimeRemoveClimbingRequiresLocalControlTest,
 	"ClimbingSystem.Input.Runtime.RemoveClimbing.RequiresLocalControl",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimeRemoveClimbingRequiresLocalControlTest::RunTest(const FString& Parameters)
 {
@@ -103,11 +100,11 @@ bool FClimbingInputRuntimeRemoveClimbingRequiresLocalControlTest::RunTest(const 
 	}
 
 	Character->ClimbingInputMappingContext = NewObject<UInputMappingContext>(Character);
-	Character->bClimbingIMCActive = true;
+	Character->TestClimbingIMCActive() = true;
 
-	Character->RemoveClimbingInputMappingContext();
+	Character->TestRemoveClimbingInputMappingContext();
 	TestTrue(TEXT("Input runtime: RemoveClimbingInputMappingContext should preserve active flag when local-control guard blocks execution"),
-		Character->bClimbingIMCActive);
+		Character->TestClimbingIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -120,7 +117,7 @@ bool FClimbingInputRuntimeRemoveClimbingRequiresLocalControlTest::RunTest(const 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimeRemoveLocomotionRequiresLocalControlTest,
 	"ClimbingSystem.Input.Runtime.RemoveLocomotion.RequiresLocalControl",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimeRemoveLocomotionRequiresLocalControlTest::RunTest(const FString& Parameters)
 {
@@ -136,11 +133,11 @@ bool FClimbingInputRuntimeRemoveLocomotionRequiresLocalControlTest::RunTest(cons
 	}
 
 	Character->LocomotionInputMappingContext = NewObject<UInputMappingContext>(Character);
-	Character->bLocomotionIMCActive = true;
+	Character->TestLocomotionIMCActive() = true;
 
-	Character->RemoveLocomotionInputMappingContext();
+	Character->TestRemoveLocomotionInputMappingContext();
 	TestTrue(TEXT("Input runtime: RemoveLocomotionInputMappingContext should preserve active flag when local-control guard blocks execution"),
-		Character->bLocomotionIMCActive);
+		Character->TestLocomotionIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -153,7 +150,7 @@ bool FClimbingInputRuntimeRemoveLocomotionRequiresLocalControlTest::RunTest(cons
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimePawnClientRestartClearsFlagsTest,
 	"ClimbingSystem.Input.Runtime.PawnClientRestart.ClearsIMCFlags",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimePawnClientRestartClearsFlagsTest::RunTest(const FString& Parameters)
 {
@@ -168,14 +165,14 @@ bool FClimbingInputRuntimePawnClientRestartClearsFlagsTest::RunTest(const FStrin
 		return false;
 	}
 
-	Character->bClimbingIMCActive = true;
-	Character->bLocomotionIMCActive = true;
+	Character->TestClimbingIMCActive() = true;
+	Character->TestLocomotionIMCActive() = true;
 	Character->PawnClientRestart();
 
 	TestFalse(TEXT("Input runtime: PawnClientRestart should clear bClimbingIMCActive before re-apply logic"),
-		Character->bClimbingIMCActive);
+		Character->TestClimbingIMCActive());
 	TestFalse(TEXT("Input runtime: PawnClientRestart should clear bLocomotionIMCActive before re-apply logic"),
-		Character->bLocomotionIMCActive);
+		Character->TestLocomotionIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -188,7 +185,7 @@ bool FClimbingInputRuntimePawnClientRestartClearsFlagsTest::RunTest(const FStrin
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingInputRuntimePawnClientRestartPreservesStateTest,
 	"ClimbingSystem.Input.Runtime.PawnClientRestart.PreservesClimbingState",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingInputRuntimePawnClientRestartPreservesStateTest::RunTest(const FString& Parameters)
 {
@@ -213,17 +210,17 @@ bool FClimbingInputRuntimePawnClientRestartPreservesStateTest::RunTest(const FSt
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->bClimbingIMCActive = true;
-	Character->bLocomotionIMCActive = true;
+	Character->TestClimbingIMCActive() = true;
+	Character->TestLocomotionIMCActive() = true;
 
 	Character->PawnClientRestart();
 
 	TestEqual(TEXT("Input runtime: PawnClientRestart should preserve current climbing state"),
 		Movement->CurrentClimbingState, EClimbingState::Hanging);
 	TestFalse(TEXT("Input runtime: climbing IMC flag should be cleared on restart in non-local automation context"),
-		Character->bClimbingIMCActive);
+		Character->TestClimbingIMCActive());
 	TestFalse(TEXT("Input runtime: locomotion IMC flag should be cleared on restart in non-local automation context"),
-		Character->bLocomotionIMCActive);
+		Character->TestLocomotionIMCActive());
 
 	Character->Destroy();
 	Helper.Teardown();

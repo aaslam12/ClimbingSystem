@@ -3,10 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test-only access for Input_Grab and cached detection state.
-#define protected public
 #include "Character/ClimbingCharacter.h"
-#undef protected
 
 #include "Components/BoxComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -73,7 +70,7 @@ static FSpawnedObstacle SpawnObstacle(
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeMantleFallbackValidRangeTest,
 	"ClimbingSystem.Character.Runtime.MantleDetectionFallback.InValidRange",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeMantleFallbackValidRangeTest::RunTest(const FString& Parameters)
 {
@@ -113,10 +110,10 @@ bool FClimbingRuntimeMantleFallbackValidRangeTest::RunTest(const FString& Parame
 		return false;
 	}
 
-	Character->CurrentDetectionResult.Reset();
+	Character->TestCurrentDetectionResult().Reset();
 	Character->MantleLow = NewObject<UAnimMontage>(Character);
 	const FInputActionValue Pressed(true);
-	Character->Input_Grab(Pressed);
+	Character->TestInput_Grab(Pressed);
 
 	TestEqual(TEXT("Mantle runtime: valid climbable obstacle in mantle range should transition to Mantling"),
 		Movement->CurrentClimbingState, EClimbingState::Mantling);
@@ -133,7 +130,7 @@ bool FClimbingRuntimeMantleFallbackValidRangeTest::RunTest(const FString& Parame
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeMantleFallbackRejectsUnclimbableTest,
 	"ClimbingSystem.Character.Runtime.MantleDetectionFallback.RejectsUnclimbable",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeMantleFallbackRejectsUnclimbableTest::RunTest(const FString& Parameters)
 {
@@ -172,9 +169,9 @@ bool FClimbingRuntimeMantleFallbackRejectsUnclimbableTest::RunTest(const FString
 		return false;
 	}
 
-	Character->CurrentDetectionResult.Reset();
+	Character->TestCurrentDetectionResult().Reset();
 	const FInputActionValue Pressed(true);
-	Character->Input_Grab(Pressed);
+	Character->TestInput_Grab(Pressed);
 
 	TestEqual(TEXT("Mantle runtime: Unclimbable obstacle should not change state from None"),
 		Movement->CurrentClimbingState, EClimbingState::None);
@@ -191,7 +188,7 @@ bool FClimbingRuntimeMantleFallbackRejectsUnclimbableTest::RunTest(const FString
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeMantleFallbackTooHighTest,
 	"ClimbingSystem.Character.Runtime.MantleDetectionFallback.TooHighNotMantling",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeMantleFallbackTooHighTest::RunTest(const FString& Parameters)
 {
@@ -231,9 +228,9 @@ bool FClimbingRuntimeMantleFallbackTooHighTest::RunTest(const FString& Parameter
 		return false;
 	}
 
-	Character->CurrentDetectionResult.Reset();
+	Character->TestCurrentDetectionResult().Reset();
 	const FInputActionValue Pressed(true);
-	Character->Input_Grab(Pressed);
+	Character->TestInput_Grab(Pressed);
 
 	TestTrue(TEXT("Mantle runtime: over-height obstacle should not transition to Mantling"),
 		Movement->CurrentClimbingState != EClimbingState::Mantling);

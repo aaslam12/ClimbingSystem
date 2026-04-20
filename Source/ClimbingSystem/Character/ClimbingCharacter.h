@@ -874,6 +874,30 @@ public:
 	UFUNCTION(Client, Reliable)
 	void Client_ConfirmStateTransition(EClimbingState ConfirmedState);
 
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Test-only shim for runtime automation tests to avoid macro-based access hacks. */
+	void TestInput_Grab(const FInputActionValue& Value) { Input_Grab(Value); }
+	void TestInput_Lache(const FInputActionValue& Value) { Input_Lache(Value); }
+	void TestInput_ClimbUp(const FInputActionValue& Value) { Input_ClimbUp(Value); }
+	void TestInput_ClimbMove(const FInputActionValue& Value) { Input_ClimbMove(Value); }
+	void TestInput_ClimbMoveCompleted(const FInputActionValue& Value) { Input_ClimbMoveCompleted(Value); }
+	void TestTickHangingState(float DeltaTime) { TickHangingState(DeltaTime); }
+	void TestTickShimmyingState(float DeltaTime) { TickShimmyingState(DeltaTime); }
+	void TestTickLacheInAirState(float DeltaTime) { TickLacheInAirState(DeltaTime); }
+	void TestAddClimbingInputMappingContext() { AddClimbingInputMappingContext(); }
+	void TestRemoveClimbingInputMappingContext() { RemoveClimbingInputMappingContext(); }
+	void TestAddLocomotionInputMappingContext() { AddLocomotionInputMappingContext(); }
+	void TestRemoveLocomotionInputMappingContext() { RemoveLocomotionInputMappingContext(); }
+	FClimbingDetectionResult& TestCurrentDetectionResult() { return CurrentDetectionResult; }
+	FClimbingDetectionResult& TestLockedLacheTarget() { return LockedLacheTarget; }
+	FVector& TestLacheLaunchPosition() { return LacheLaunchPosition; }
+	FVector& TestLacheLaunchDirection() { return LacheLaunchDirection; }
+	float& TestLacheFlightTime() { return LacheFlightTime; }
+	float& TestCommittedShimmyDir() { return CommittedShimmyDir; }
+	bool& TestClimbingIMCActive() { return bClimbingIMCActive; }
+	bool& TestLocomotionIMCActive() { return bLocomotionIMCActive; }
+#endif // WITH_DEV_AUTOMATION_TESTS
+
 protected:
 	// Friend classes that need access to protected members
 	friend class UAnimNotify_ClimbSoundCue;

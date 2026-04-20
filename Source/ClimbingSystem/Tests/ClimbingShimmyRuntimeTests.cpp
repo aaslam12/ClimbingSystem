@@ -3,10 +3,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test-only access for input handlers and per-state tick functions.
-#define protected public
 #include "Character/ClimbingCharacter.h"
-#undef protected
 
 #include "InputActionValue.h"
 #include "Movement/ClimbingMovementComponent.h"
@@ -33,7 +30,7 @@ static FClimbingDetectionResult MakeShimmyDetection()
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeShimmyDirectionUpdatesAboveDeadzoneTest,
 	"ClimbingSystem.Actions.Shimmy.Runtime.DirectionUpdatesAboveDeadzone",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeShimmyDirectionUpdatesAboveDeadzoneTest::RunTest(const FString& Parameters)
 {
@@ -49,14 +46,14 @@ bool FClimbingRuntimeShimmyDirectionUpdatesAboveDeadzoneTest::RunTest(const FStr
 	}
 
 	const FInputActionValue MoveRight(FVector2D(0.6f, 0.0f));
-	Character->Input_ClimbMove(MoveRight);
+	Character->TestInput_ClimbMove(MoveRight);
 	TestEqual(TEXT("Shimmy runtime: positive input above deadzone should commit right direction"),
-		Character->CommittedShimmyDir, 1.0f);
+		Character->TestCommittedShimmyDir(), 1.0f);
 
 	const FInputActionValue MoveLeft(FVector2D(-0.7f, 0.0f));
-	Character->Input_ClimbMove(MoveLeft);
+	Character->TestInput_ClimbMove(MoveLeft);
 	TestEqual(TEXT("Shimmy runtime: negative input above deadzone should commit left direction"),
-		Character->CommittedShimmyDir, -1.0f);
+		Character->TestCommittedShimmyDir(), -1.0f);
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -69,7 +66,7 @@ bool FClimbingRuntimeShimmyDirectionUpdatesAboveDeadzoneTest::RunTest(const FStr
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeShimmyDirectionPersistsInsideDeadzoneTest,
 	"ClimbingSystem.Actions.Shimmy.Runtime.DirectionPersistsInsideDeadzone",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeShimmyDirectionPersistsInsideDeadzoneTest::RunTest(const FString& Parameters)
 {
@@ -85,12 +82,12 @@ bool FClimbingRuntimeShimmyDirectionPersistsInsideDeadzoneTest::RunTest(const FS
 	}
 
 	Character->ShimmyDirectionDeadzone = 0.1f;
-	Character->CommittedShimmyDir = 1.0f;
+	Character->TestCommittedShimmyDir() = 1.0f;
 	const FInputActionValue SmallInput(FVector2D(0.05f, 0.0f));
-	Character->Input_ClimbMove(SmallInput);
+	Character->TestInput_ClimbMove(SmallInput);
 
 	TestEqual(TEXT("Shimmy runtime: below-deadzone input should keep previous committed direction"),
-		Character->CommittedShimmyDir, 1.0f);
+		Character->TestCommittedShimmyDir(), 1.0f);
 
 	Character->Destroy();
 	Helper.Teardown();
@@ -103,7 +100,7 @@ bool FClimbingRuntimeShimmyDirectionPersistsInsideDeadzoneTest::RunTest(const FS
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeHangingToShimmyTransitionTest,
 	"ClimbingSystem.Actions.Shimmy.Runtime.HangingTransitionsToShimmying",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeHangingToShimmyTransitionTest::RunTest(const FString& Parameters)
 {
@@ -128,10 +125,10 @@ bool FClimbingRuntimeHangingToShimmyTransitionTest::RunTest(const FString& Param
 	}
 
 	Movement->SetClimbingState(EClimbingState::Hanging);
-	Character->CurrentDetectionResult = MakeShimmyDetection();
+	Character->TestCurrentDetectionResult() = MakeShimmyDetection();
 	const FInputActionValue MoveRight(FVector2D(0.6f, 0.0f));
-	Character->Input_ClimbMove(MoveRight);
-	Character->TickHangingState(0.016f);
+	Character->TestInput_ClimbMove(MoveRight);
+	Character->TestTickHangingState(0.016f);
 
 	TestEqual(TEXT("Shimmy runtime: active horizontal input from Hanging should transition to Shimmying"),
 		Movement->CurrentClimbingState, EClimbingState::Shimmying);
@@ -147,7 +144,7 @@ bool FClimbingRuntimeHangingToShimmyTransitionTest::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClimbingRuntimeShimmyReleaseReturnsToHangingTest,
 	"ClimbingSystem.Actions.Shimmy.Runtime.ReleaseReturnsToHanging",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+	EAutomationTestFlags::CommandletContext | EAutomationTestFlags::EngineFilter)
 
 bool FClimbingRuntimeShimmyReleaseReturnsToHangingTest::RunTest(const FString& Parameters)
 {
@@ -172,10 +169,10 @@ bool FClimbingRuntimeShimmyReleaseReturnsToHangingTest::RunTest(const FString& P
 	}
 
 	Movement->SetClimbingState(EClimbingState::Shimmying);
-	Character->CurrentDetectionResult = MakeShimmyDetection();
-	Character->Input_ClimbMove(FInputActionValue(FVector2D(0.5f, 0.0f)));
-	Character->Input_ClimbMoveCompleted(FInputActionValue(FVector2D::ZeroVector));
-	Character->TickShimmyingState(0.016f);
+	Character->TestCurrentDetectionResult() = MakeShimmyDetection();
+	Character->TestInput_ClimbMove(FInputActionValue(FVector2D(0.5f, 0.0f)));
+	Character->TestInput_ClimbMoveCompleted(FInputActionValue(FVector2D::ZeroVector));
+	Character->TestTickShimmyingState(0.016f);
 
 	TestEqual(TEXT("Shimmy runtime: releasing input in Shimmying should return to Hanging"),
 		Movement->CurrentClimbingState, EClimbingState::Hanging);
