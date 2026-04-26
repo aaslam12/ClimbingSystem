@@ -1,7 +1,7 @@
 # TEST_REGISTRY.md
 # UE5 Multiplayer Climbing System — Test Case Registry
-# Last updated: 2026-04-25T18:34:24-07:00
-# Total registered: 424 | Implemented: 152 | Planned: 272 | Manual QA: 3
+# Last updated: 2026-04-25T19:24:04-07:00
+# Total registered: 620 | Implemented: 152 | Planned: 468 | Manual QA: 3
 
 ---
 
@@ -10,6 +10,8 @@
 |-------|------|--------------|-------------|-------------|
 | 1     | 2026-04-25 | 122 | Detection, Traces, StateMachine, Movement, Actions, Shimmy, Corner, BracedWall, Lache, Mantle, Ladder, Ragdoll, Physics, IK, Animation, Audio, Camera, Multiplayer, Input, Debug, Lifecycle | 5-agent coordinated fleet; each agent assigned non-overlapping systems and TC-ID ranges |
 | 2     | 2026-04-25 | 150 | Mantle depth, Ladder depth, Ragdoll/Physics depth, IK/Camera/Audio/SurfaceData depth, Multiplayer RPCs, Freefall/CoyoteTime, ClimbableOneWay, Integration/Stress/Performance, MontageCallbacks, InputHandlers, Capsule, WarpTargets | 5-agent fleet Run 2; focused on ~30% coverage areas, failure/stress/edge cases, untested functions |
+| 3     | 2026-04-25 | 136 | Uncovered functions (ClassifyHangType, TickLadderState, TickLacheInAirState, Input_Move/Look, bAutoLacheCinematic, MinLedgeDepth, ShimmyReposition, OverhangPenalty, NativeInit/Update, OnClimbingStateReplicated, UpdateBracedWallIK), all 10 warp targets, debug visualization depth, animation gaps (HangIdleLeft/Right, DropDown slots, LadderFastAscend/Descend, GrabFail, ClimbingMontageSlot), IK failure modes, shimmy playback rate, ladder tick/exit, detection frequency, zero-parameter edge cases, full lifecycle integrations, network round-trips | 5-agent fleet Run 3; pushed all systems toward ~100% coverage |
+| 4     | 2026-04-25 | 60 | Priority (equal-distance, OneWay, LadderOnly, multi-ledge, Unclimbable, boundary, determinism), ClimbUp (CrouchFullFlow, FromShimmying, CapsuleSweep, NullMontage, WarpPosition/Rotation, ServerReRun, CrouchMontage, InterruptedBlendOut), Corner (OutsideLeft, InsideRight, DotZero, FromBraced, NullMontage, TraceDistance, DistanceReset, Replication, BracedAngle), Lifecycle (NullMotionWarping, ScanTimer, StateConfigs, DestroyedDuringMontage, EndPlayLache/Ragdoll, EndPlayIKManager, DestroyedCorner), Performance/Stress (HeavyGeometry, RpcThroughput, MemoryStability, MontageThroughput, IK4Limbs, MaxGrid, FullCleanup, AnchorPerf, AudioPerf, 10Climbers, ShimmyStress, LacheStress, GetMontagePerf, ResolveHitPerf, OneWayPerf) | 3-agent fleet Run 4; closed final 5 gaps to reach ~100% planned coverage across all 30 systems |
 
 ---
 
@@ -5372,40 +5374,3770 @@
 
 ---
 
+
+### TC-0425
+- **Name:** ClassifyHangTypeBracedWhenWallPresent
+- **Registry String:** `ClimbingSystem.Detection.ClassifyHangType.BracedWhenWallPresent`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::ClassifyHangType
+- **Behavior Tested:** ClassifyHangType sets result to braced hang when wall backing trace finds wall.
+- **Preconditions:** Character at ledge; wall behind character.
+- **Action:** Call ClassifyHangType with detection result.
+- **Expected Outcome:** Result classified as braced.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: wall backing trace classifies hang type.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0426
+- **Name:** ClassifyHangTypeFreeWhenNoWall
+- **Registry String:** `ClimbingSystem.Detection.ClassifyHangType.FreeHangWhenNoWall`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::ClassifyHangType
+- **Behavior Tested:** ClassifyHangType sets result to free hang when no wall found behind character.
+- **Preconditions:** Character at ledge; no wall behind.
+- **Action:** Call ClassifyHangType.
+- **Expected Outcome:** Result classified as free hang.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Free vs braced determines state entry path.
+- **Extends:** TC-0425
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0427
+- **Name:** ClassifyHangTypeNoSideEffects
+- **Registry String:** `ClimbingSystem.Detection.ClassifyHangType.NoSideEffectsOnResult`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::ClassifyHangType
+- **Behavior Tested:** ClassifyHangType only modifies hang type field; does not alter LedgePosition, SurfaceNormal, or other fields.
+- **Preconditions:** Detection result with known field values.
+- **Action:** Call ClassifyHangType; verify other fields unchanged.
+- **Expected Outcome:** Only hang type field modified.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Side effects would corrupt detection data.
+- **Extends:** TC-0425
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0428
+- **Name:** TickLadderStateUpwardMovement
+- **Registry String:** `ClimbingSystem.Ladder.Tick.UpwardMovementApplied`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Positive Y input moves character upward at ladder climb speed.
+- **Preconditions:** Character on ladder; IA_ClimbMove.Y = 1.0.
+- **Action:** Call TickLadderState(DeltaTime).
+- **Expected Outcome:** Character Z position increased by speed * DeltaTime.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_ClimbMove Y-axis drives ladder movement.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0429
+- **Name:** TickLadderStateRungSnap
+- **Registry String:** `ClimbingSystem.Ladder.Tick.RungSnapApplied`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Character position snaps to nearest rung grid interval when stopping.
+- **Preconditions:** Character on ladder; input released mid-rung.
+- **Action:** Release input; tick.
+- **Expected Outcome:** Position snaps to nearest LadderRungSpacing multiple.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: LadderRungSpacing drives vertical snap grid.
+- **Extends:** TC-0428
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0430
+- **Name:** TickLadderStateTopExit
+- **Registry String:** `ClimbingSystem.Ladder.Tick.TopExitTriggersTransition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Reaching ladder top triggers LadderTransition state.
+- **Preconditions:** Character near top of ladder; climbing up.
+- **Action:** Tick until top reached.
+- **Expected Outcome:** State = LadderTransition.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Top exit is primary ladder exit path.
+- **Extends:** TC-0428
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0431
+- **Name:** TickLadderStateBottomExit
+- **Registry String:** `ClimbingSystem.Ladder.Tick.BottomExitTriggersTransition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Reaching ladder bottom triggers LadderTransition state.
+- **Preconditions:** Character near bottom of ladder; climbing down.
+- **Action:** Tick until bottom reached.
+- **Expected Outcome:** State = LadderTransition.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Bottom exit path.
+- **Extends:** TC-0430
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0432
+- **Name:** TickLacheInAirFollowsArc
+- **Registry String:** `ClimbingSystem.Lache.Tick.InAirFollowsArcPosition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLacheInAirState
+- **Behavior Tested:** Character position follows arc formula each tick during LacheInAir.
+- **Preconditions:** Character in LacheInAir; known launch params.
+- **Action:** Tick; compare position to arc formula.
+- **Expected Outcome:** Position matches LaunchOrigin + ArcVelocity*t + 0.5*GravityZ*t^2.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: arc parameterization with negative GravityZ.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0433
+- **Name:** TickLacheInAirCatchTransition
+- **Registry String:** `ClimbingSystem.Lache.Tick.InAirCatchTransitionsToLacheCatch`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLacheInAirState
+- **Behavior Tested:** When arc reaches catch target, state transitions to LacheCatch.
+- **Preconditions:** Character in LacheInAir; valid catch target ahead.
+- **Action:** Tick through arc until catch point.
+- **Expected Outcome:** State = LacheCatch.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Catch is the success path of Lache.
+- **Extends:** TC-0432
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0434
+- **Name:** TickLacheInAirMissTransition
+- **Registry String:** `ClimbingSystem.Lache.Tick.InAirMissTransitionsToLacheMiss`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLacheInAirState
+- **Behavior Tested:** When arc completes without catch, state transitions to LacheMiss.
+- **Preconditions:** Character in LacheInAir; no valid catch target.
+- **Action:** Tick through full arc duration.
+- **Expected Outcome:** State = LacheMiss.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Miss is the failure path of Lache.
+- **Extends:** TC-0432
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0435
+- **Name:** InputMoveUpdatesClimbMoveInputDuringClimbing
+- **Registry String:** `ClimbingSystem.Input.Move.UpdatesClimbMoveInputDuringClimbing`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingInputContextRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::Input_Move
+- **Behavior Tested:** During climbing states, Input_Move updates CurrentClimbMoveInput from movement vector.
+- **Preconditions:** Character in Hanging.
+- **Action:** Call Input_Move with FVector2D(0.5, 0.3).
+- **Expected Outcome:** CurrentClimbMoveInput == (0.5, 0.3).
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Input_Move routes to climbing input during climbing states.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0436
+- **Name:** InputMoveNormalLocomotionDuringNone
+- **Registry String:** `ClimbingSystem.Input.Move.NormalLocomotionDuringNoneState`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingInputContextRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::Input_Move
+- **Behavior Tested:** During None state, Input_Move drives normal locomotion, not climbing input.
+- **Preconditions:** Character in None.
+- **Action:** Call Input_Move.
+- **Expected Outcome:** CurrentClimbMoveInput unchanged; locomotion input applied.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Input routing must differ by state.
+- **Extends:** TC-0435
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0437
+- **Name:** InputLookSuppressedDuringCinematicLock
+- **Registry String:** `ClimbingSystem.Input.Look.SuppressedDuringCinematicLock`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingInputContextRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::Input_Look
+- **Behavior Tested:** During cinematic lock (bCameraLocked), look input is suppressed.
+- **Preconditions:** Camera locked via LockCameraToFrame.
+- **Action:** Call Input_Look with rotation input.
+- **Expected Outcome:** Camera rotation unchanged.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: LockCameraToFrame affects local player camera.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0438
+- **Name:** InputLookAppliedWhenUnlocked
+- **Registry String:** `ClimbingSystem.Input.Look.AppliedWhenCameraUnlocked`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingInputContextRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::Input_Look
+- **Behavior Tested:** When camera is not locked, look input is applied normally.
+- **Preconditions:** Camera not locked.
+- **Action:** Call Input_Look with rotation input.
+- **Expected Outcome:** Camera rotation updated.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Complement to TC-0437.
+- **Extends:** TC-0437
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0439
+- **Name:** AutoLacheCinematicWithinThreshold
+- **Registry String:** `ClimbingSystem.Lache.Cinematic.AutoLockWithinThreshold`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** bAutoLacheCinematic + LacheCinematicDistanceThreshold
+- **Behavior Tested:** When bAutoLacheCinematic=true and target within 300cm, LockCameraToFrame is called.
+- **Preconditions:** bAutoLacheCinematic=true; Lache target at 200cm.
+- **Action:** Trigger Lache.
+- **Expected Outcome:** LockCameraToFrame called.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: bAutoLacheCinematic + LacheCinematicDistanceThreshold auto-call LockCameraToFrame.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0440
+- **Name:** AutoLacheCinematicBeyondThreshold
+- **Registry String:** `ClimbingSystem.Lache.Cinematic.NoLockBeyondThreshold`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** bAutoLacheCinematic + LacheCinematicDistanceThreshold
+- **Behavior Tested:** When target beyond 300cm, LockCameraToFrame is NOT called.
+- **Preconditions:** bAutoLacheCinematic=true; Lache target at 400cm.
+- **Action:** Trigger Lache.
+- **Expected Outcome:** LockCameraToFrame NOT called.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Distance threshold must be respected.
+- **Extends:** TC-0439
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0441
+- **Name:** MinLedgeDepthRejectsShallowLedge
+- **Registry String:** `ClimbingSystem.Detection.MinLedgeDepth.RejectsShallowLedge`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::PerformLedgeDetection
+- **Behavior Tested:** Ledge thinner than MinLedgeDepth(15cm) is rejected.
+- **Preconditions:** Character near ledge with 10cm depth.
+- **Action:** Call PerformLedgeDetection.
+- **Expected Outcome:** bValid == false.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: MinLedgeDepth=15cm.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0442
+- **Name:** MinLedgeDepthAcceptsAtThreshold
+- **Registry String:** `ClimbingSystem.Detection.MinLedgeDepth.AcceptsAtThreshold`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::PerformLedgeDetection
+- **Behavior Tested:** Ledge at exactly MinLedgeDepth(15cm) is accepted.
+- **Preconditions:** Character near ledge with 15cm depth.
+- **Action:** Call PerformLedgeDetection.
+- **Expected Outcome:** bValid == true.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Boundary test for MinLedgeDepth.
+- **Extends:** TC-0441
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0443
+- **Name:** ShimmyRepositionTriggeredAtLimit
+- **Registry String:** `ClimbingSystem.Shimmy.Reposition.TriggeredAtMaxDistance`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickShimmyingState
+- **Behavior Tested:** ShimmyReposition montage triggered when ContinuousShimmyDistance exceeds MaxContinuousShimmyDistance(300cm).
+- **Preconditions:** Character shimmying; distance approaching 300cm.
+- **Action:** Tick until distance exceeds 300cm.
+- **Expected Outcome:** ShimmyReposition montage plays.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: shimmy beyond MaxContinuousShimmyDistance triggers ShimmyReposition.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0444
+- **Name:** ShimmyRepositionMontageRateZero
+- **Registry String:** `ClimbingSystem.Shimmy.Reposition.MontageRateZeroDuringReposition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::TickShimmyingState
+- **Behavior Tested:** During ShimmyReposition, montage rate is set to 0 (character stationary).
+- **Preconditions:** ShimmyReposition triggered.
+- **Action:** Check montage play rate during reposition.
+- **Expected Outcome:** PlaybackRate == 0.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: montage rate = 0 during ShimmyReposition.
+- **Extends:** TC-0443
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0445
+- **Name:** OverhangPenaltyNoPenaltyBelowStart
+- **Registry String:** `ClimbingSystem.Shimmy.Overhang.NoPenaltyBelowStartAngle`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Overhang penalty formula
+- **Behavior Tested:** OverhangAngleDeg <= OverhangPenaltyStartAngle results in penalty = 1.0 (no penalty).
+- **Preconditions:** Surface normal producing angle below start.
+- **Action:** Compute overhang penalty.
+- **Expected Outcome:** Penalty == 1.0.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: no penalty below start angle.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0446
+- **Name:** OverhangPenaltyLerpAcrossRange
+- **Registry String:** `ClimbingSystem.Shimmy.Overhang.LerpAcrossRange`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Overhang penalty formula
+- **Behavior Tested:** Penalty lerps from 1.0 to OverhangMaxPenaltyScalar across the range.
+- **Preconditions:** Angle at midpoint of range.
+- **Action:** Compute penalty.
+- **Expected Outcome:** Penalty = midpoint between 1.0 and MaxPenaltyScalar.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Lerp formula.
+- **Extends:** TC-0445
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0447
+- **Name:** OverhangPenaltyClampedAtMax
+- **Registry String:** `ClimbingSystem.Shimmy.Overhang.ClampedAtMaxPenaltyScalar`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Overhang penalty formula
+- **Behavior Tested:** Angle beyond start+range clamps penalty to OverhangMaxPenaltyScalar.
+- **Preconditions:** Angle well beyond range.
+- **Action:** Compute penalty.
+- **Expected Outcome:** Penalty == OverhangMaxPenaltyScalar.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: Clamp(0,1) in lerp.
+- **Extends:** TC-0446
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0448
+- **Name:** NativeInitializeAnimationCachesOwner
+- **Registry String:** `ClimbingSystem.Anim.NativeInit.CachesOwnerReference`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** UClimbingAnimInstance::NativeInitializeAnimation
+- **Behavior Tested:** NativeInitializeAnimation caches the owning character reference.
+- **Preconditions:** AnimInstance created with valid owner.
+- **Action:** Call NativeInitializeAnimation.
+- **Expected Outcome:** Cached owner pointer is non-null and matches owning character.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** All anim updates depend on cached owner.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0449
+- **Name:** NativeUpdateAnimationCopiesState
+- **Registry String:** `ClimbingSystem.Anim.NativeUpdate.CopiesClimbingStateToProperties`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** UClimbingAnimInstance::NativeUpdateAnimation
+- **Behavior Tested:** NativeUpdateAnimation copies current climbing state to anim blueprint properties.
+- **Preconditions:** Owner in Hanging state.
+- **Action:** Call NativeUpdateAnimation(0.016f).
+- **Expected Outcome:** AnimInstance climbing state property == Hanging.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** ABP reads state from AnimInstance properties.
+- **Extends:** TC-0448
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0450
+- **Name:** NativeUpdateAnimationNullOwnerNoCrash
+- **Registry String:** `ClimbingSystem.Anim.NativeUpdate.NullOwnerNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** UClimbingAnimInstance::NativeUpdateAnimation
+- **Behavior Tested:** NativeUpdateAnimation does not crash when cached owner is null.
+- **Preconditions:** Owner pointer nulled after init.
+- **Action:** Call NativeUpdateAnimation(0.016f).
+- **Expected Outcome:** No crash; no state update.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Owner can be destroyed mid-frame.
+- **Extends:** TC-0449
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0451
+- **Name:** OnClimbingStateReplicatedRoutesToOnStateEnter
+- **Registry String:** `ClimbingSystem.Multiplayer.OnClimbingStateReplicated.RoutesToOnStateEnter`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::OnClimbingStateReplicated
+- **Behavior Tested:** OnClimbingStateReplicated calls OnStateEnter for the new state on proxy.
+- **Preconditions:** Simulated proxy; OldState=None, NewState=Hanging.
+- **Action:** Call OnClimbingStateReplicated(None, Hanging).
+- **Expected Outcome:** OnStateEnter(Hanging) executed; entry montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: OnRep routes to OnStateEnter/Exit for proxies.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0452
+- **Name:** OnClimbingStateReplicatedRoutesToOnStateExit
+- **Registry String:** `ClimbingSystem.Multiplayer.OnClimbingStateReplicated.RoutesToOnStateExit`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::OnClimbingStateReplicated
+- **Behavior Tested:** OnClimbingStateReplicated calls OnStateExit for the old state on proxy.
+- **Preconditions:** Simulated proxy; OldState=Hanging, NewState=None.
+- **Action:** Call OnClimbingStateReplicated(Hanging, None).
+- **Expected Outcome:** OnStateExit(Hanging) executed; cleanup runs.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Exit cleanup must run on proxies too.
+- **Extends:** TC-0451
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0453
+- **Name:** UpdateBracedWallIKValidTargets
+- **Registry String:** `ClimbingSystem.IK.BracedWall.ValidTargetsWhenWallPresent`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateBracedWallIK
+- **Behavior Tested:** UpdateBracedWallIK produces valid hand/foot IK targets when wall is present.
+- **Preconditions:** Character in BracedWall; wall behind.
+- **Action:** Call UpdateBracedWallIK.
+- **Expected Outcome:** All 4 IK targets are non-zero and on the wall surface.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Braced IK requires wall contact points.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0454
+- **Name:** UpdateBracedWallIKNoTargetsWhenNoWall
+- **Registry String:** `ClimbingSystem.IK.BracedWall.NoTargetsWhenNoWallContact`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateBracedWallIK
+- **Behavior Tested:** UpdateBracedWallIK produces no IK targets when no wall contact found.
+- **Preconditions:** Character in BracedWall; wall removed.
+- **Action:** Call UpdateBracedWallIK.
+- **Expected Outcome:** IK weights fade to 0; no crash.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Missing wall must not crash IK.
+- **Extends:** TC-0453
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0455
+- **Name:** WarpTargetLadderEnterTopPosition
+- **Registry String:** `ClimbingSystem.WarpTarget.LadderEnterTop.PositionRegistered`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_LadderEnterTop registration
+- **Behavior Tested:** WarpTarget_LadderEnterTop registered at correct position on ladder top entry.
+- **Preconditions:** Character at top of ladder; MotionWarping present.
+- **Action:** Transition to LadderTransition from top.
+- **Expected Outcome:** WarpTarget_LadderEnterTop registered at ladder top position.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: 10 named warp targets.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0456
+- **Name:** WarpTargetLadderEnterTopRotation
+- **Registry String:** `ClimbingSystem.WarpTarget.LadderEnterTop.RotationMatchesLadder`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** WarpTarget_LadderEnterTop rotation
+- **Behavior Tested:** WarpTarget_LadderEnterTop rotation aligns character to face ladder.
+- **Preconditions:** Ladder facing +X.
+- **Action:** Register warp target; check rotation.
+- **Expected Outcome:** Rotation faces ladder surface.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Misaligned rotation causes animation pop.
+- **Extends:** TC-0455
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0457
+- **Name:** WarpTargetLadderExitBottomPosition
+- **Registry String:** `ClimbingSystem.WarpTarget.LadderExitBottom.PositionRegistered`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_LadderExitBottom registration
+- **Behavior Tested:** WarpTarget_LadderExitBottom registered at correct position.
+- **Preconditions:** Character at bottom of ladder; exiting.
+- **Action:** Transition to LadderTransition from bottom.
+- **Expected Outcome:** WarpTarget_LadderExitBottom registered.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: WarpTarget_LadderExitBottom.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0458
+- **Name:** WarpTargetLadderExitTopPosition
+- **Registry String:** `ClimbingSystem.WarpTarget.LadderExitTop.PositionRegistered`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_LadderExitTop registration
+- **Behavior Tested:** WarpTarget_LadderExitTop registered at correct position.
+- **Preconditions:** Character at top of ladder; exiting.
+- **Action:** Transition to LadderTransition from top.
+- **Expected Outcome:** WarpTarget_LadderExitTop registered.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: WarpTarget_LadderExitTop.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0459
+- **Name:** WarpTargetMantleLowPositionMatchesLedge
+- **Registry String:** `ClimbingSystem.WarpTarget.MantleLow.PositionMatchesLedge`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_MantleLow position
+- **Behavior Tested:** WarpTarget_MantleLow position matches detection result LedgePosition.
+- **Preconditions:** Valid mantle low detection.
+- **Action:** Transition to Mantling; compare warp target to LedgePosition.
+- **Expected Outcome:** Positions match within 1cm.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Warp target must align to ledge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0460
+- **Name:** WarpTargetMantleHighPositionMatchesLedge
+- **Registry String:** `ClimbingSystem.WarpTarget.MantleHigh.PositionMatchesLedge`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_MantleHigh position
+- **Behavior Tested:** WarpTarget_MantleHigh position matches detection result LedgePosition.
+- **Preconditions:** Valid mantle high detection.
+- **Action:** Transition to Mantling; compare warp target to LedgePosition.
+- **Expected Outcome:** Positions match within 1cm.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Warp target must align to ledge.
+- **Extends:** TC-0459
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0461
+- **Name:** WarpTargetLedgeGrabRotationMatchesNormal
+- **Registry String:** `ClimbingSystem.WarpTarget.LedgeGrab.RotationMatchesSurfaceNormal`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** WarpTarget_LedgeGrab rotation
+- **Behavior Tested:** WarpTarget_LedgeGrab rotation aligns character to face wall (opposite of surface normal).
+- **Preconditions:** Wall with normal=(0,1,0).
+- **Action:** Grab ledge; check warp target rotation.
+- **Expected Outcome:** Rotation yaw faces into wall (opposite of normal).
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Translation + Rotation warp for GrabLedge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0462
+- **Name:** DebugDetectionTracesDrawnWhenEnabled
+- **Registry String:** `ClimbingSystem.Debug.Detection.TracesDrawnWhenEnabled`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Detection traces (green/red/yellow) drawn when bDrawDebug=true.
+- **Preconditions:** bDrawDebug=true; character ticking with geometry.
+- **Action:** Tick; count debug draw calls.
+- **Expected Outcome:** Detection trace draw calls > 0.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: detection traces drawn when debug enabled.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0463
+- **Name:** DebugIKTargetSpheresDrawn
+- **Registry String:** `ClimbingSystem.Debug.IK.TargetSpheresDrawnWhenEnabled`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** IK target white spheres drawn when bDrawDebug=true and climbing.
+- **Preconditions:** bDrawDebug=true; character in Hanging with IK active.
+- **Action:** Tick; check for white sphere draws.
+- **Expected Outcome:** 4 white sphere draws (one per limb).
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IK targets drawn as white spheres.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0464
+- **Name:** DebugAnchorCyanSphereDrawn
+- **Registry String:** `ClimbingSystem.Debug.Anchor.CyanSphereDrawnWhenEnabled`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Anchor position drawn as cyan sphere when bDrawDebug=true.
+- **Preconditions:** bDrawDebug=true; character climbing with anchor.
+- **Action:** Tick.
+- **Expected Outcome:** Cyan sphere drawn at anchor world position.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: anchor drawn in cyan.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0465
+- **Name:** DebugCornerPredictiveTraceBlue
+- **Registry String:** `ClimbingSystem.Debug.Corner.PredictiveTraceDrawnInBlue`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P3
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Corner predictive trace drawn in blue when bDrawDebug=true during shimmy.
+- **Preconditions:** bDrawDebug=true; character shimmying near corner.
+- **Action:** Tick.
+- **Expected Outcome:** Blue trace line drawn in shimmy direction.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: corner predictive trace in blue.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0466
+- **Name:** DebugStateTextOnScreen
+- **Registry String:** `ClimbingSystem.Debug.State.CurrentAndPreviousOnScreen`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P3
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Current and previous state printed on screen when bDrawDebug=true.
+- **Preconditions:** bDrawDebug=true; character in Hanging (previous=None).
+- **Action:** Tick.
+- **Expected Outcome:** On-screen text shows "Hanging" and "None".
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: current + previous state on-screen.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0467
+- **Name:** DebugShimmyDirTextDuringShimmy
+- **Registry String:** `ClimbingSystem.Debug.Shimmy.CommittedDirTextDuringShimmy`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P3
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** CommittedShimmyDir displayed as on-screen text during shimmy.
+- **Preconditions:** bDrawDebug=true; character shimmying.
+- **Action:** Tick.
+- **Expected Outcome:** On-screen text shows shimmy direction value.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: CommittedShimmyDir as on-screen text during shimmy.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0468
+- **Name:** DebugFreefallGrabWindowSphere
+- **Registry String:** `ClimbingSystem.Debug.Freefall.GrabWindowSphereDrawn`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P3
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Freefall grab window drawn as shoulder-height sphere when bDrawDebug=true.
+- **Preconditions:** bDrawDebug=true; character falling.
+- **Action:** Tick.
+- **Expected Outcome:** Sphere drawn at shoulder height.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: freefall grab window sphere.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0469
+- **Name:** HangIdleLeftSelectedOnNegativeLean
+- **Registry String:** `ClimbingSystem.Anim.HangIdle.LeftSelectedOnNegativeLean`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationEdgeCaseTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter montage selection
+- **Behavior Tested:** HangIdleLeft montage selected when lean direction is negative.
+- **Preconditions:** Character in Hanging; lean direction < 0.
+- **Action:** Query idle montage.
+- **Expected Outcome:** HangIdleLeft returned.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Hanging + leaning left -> HangIdleLeft.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0470
+- **Name:** HangIdleRightSelectedOnPositiveLean
+- **Registry String:** `ClimbingSystem.Anim.HangIdle.RightSelectedOnPositiveLean`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationEdgeCaseTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter montage selection
+- **Behavior Tested:** HangIdleRight montage selected when lean direction is positive.
+- **Preconditions:** Character in Hanging; lean direction > 0.
+- **Action:** Query idle montage.
+- **Expected Outcome:** HangIdleRight returned.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Hanging + leaning right -> HangIdleRight.
+- **Extends:** TC-0469
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0471
+- **Name:** DropDownSlotFromHanging
+- **Registry String:** `ClimbingSystem.Anim.DropDown.SlotSelectedFromHanging`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter drop montage selection
+- **Behavior Tested:** DropDown montage selected when PreviousState is Hanging.
+- **Preconditions:** Character dropping from Hanging.
+- **Action:** Transition to DroppingDown.
+- **Expected Outcome:** DropDown montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: PreviousState hang/braced -> DropDown.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0472
+- **Name:** LadderExitSideSlotFromOnLadder
+- **Registry String:** `ClimbingSystem.Anim.DropDown.LadderExitSideFromOnLadder`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter drop montage selection
+- **Behavior Tested:** LadderExitSide montage selected when PreviousState is OnLadder.
+- **Preconditions:** Character dropping from OnLadder.
+- **Action:** Transition to DroppingDown.
+- **Expected Outcome:** LadderExitSide montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: PreviousState OnLadder -> LadderExitSide.
+- **Extends:** TC-0471
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0473
+- **Name:** LadderFastAscendMontageOnSprint
+- **Registry String:** `ClimbingSystem.Anim.Ladder.FastAscendMontageOnSprint`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter ladder montage selection
+- **Behavior Tested:** LadderFastAscend montage selected when climbing up with Sprint held.
+- **Preconditions:** Character on ladder; climbing up; bSprintHeld=true.
+- **Action:** Tick ladder state.
+- **Expected Outcome:** LadderFastAscend montage playing.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_Sprint -> LadderFastAscend.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0474
+- **Name:** LadderFastDescendMontageOnCrouch
+- **Registry String:** `ClimbingSystem.Anim.Ladder.FastDescendMontageOnCrouch`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter ladder montage selection
+- **Behavior Tested:** LadderFastDescend montage selected when climbing down with Crouch held.
+- **Preconditions:** Character on ladder; climbing down; bCrouchHeld=true.
+- **Action:** Tick ladder state.
+- **Expected Outcome:** LadderFastDescend montage playing.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_Crouch -> LadderFastDescend.
+- **Extends:** TC-0473
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0475
+- **Name:** ShimmyPlaybackRateScalesWithSpeed
+- **Registry String:** `ClimbingSystem.Anim.Shimmy.PlaybackRateScalesWithInputMagnitude`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter shimmy montage rate
+- **Behavior Tested:** Shimmy montage PlaybackRate scales between ShimmyPlaybackRateMin(0.4) and Max(1.2).
+- **Preconditions:** Character shimmying at 50% speed.
+- **Action:** Check montage play rate.
+- **Expected Outcome:** Rate ~0.8 (midpoint of 0.4-1.2).
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: PlaybackRate = Lerp(Min, Max, NormalizedSpeed).
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0476
+- **Name:** ClimbingMontageSlotDefaultFullBody
+- **Registry String:** `ClimbingSystem.Anim.MontageSlot.DefaultIsFullBody`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationSetTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::ClimbingMontageSlot
+- **Behavior Tested:** ClimbingMontageSlot defaults to FName("FullBody").
+- **Preconditions:** Default character instance.
+- **Action:** Read ClimbingMontageSlot.
+- **Expected Outcome:** Value == FName("FullBody").
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: ClimbingMontageSlot default "FullBody".
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0477
+- **Name:** GrabFailMontagePlayedOnRejection
+- **Registry String:** `ClimbingSystem.Anim.GrabFail.MontagePlayedOnServerRejection`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Client_RejectStateTransition GrabFail montage
+- **Behavior Tested:** GrabFail montage plays after server rejection.
+- **Preconditions:** Client predicted Hanging; server rejects.
+- **Action:** Call Client_RejectStateTransition.
+- **Expected Outcome:** GrabFail montage playing.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: rejection triggers GrabFail montage.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0478
+- **Name:** DebugCapsuleBoundsOrangeDrawn
+- **Registry String:** `ClimbingSystem.Debug.Capsule.BoundsDrawnInOrange`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P3
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** Capsule override bounds drawn in orange when bDrawDebug=true during climbing.
+- **Preconditions:** bDrawDebug=true; character climbing.
+- **Action:** Tick.
+- **Expected Outcome:** Orange capsule bounds drawn.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: capsule override bounds in orange.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0479
+- **Name:** DebugAllDrawsCompiledOutInShipping
+- **Registry String:** `ClimbingSystem.Debug.Shipping.AllDrawsCompiledOut`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Debug shipping guard
+- **Behavior Tested:** All debug draw code is inside #if !UE_BUILD_SHIPPING guards.
+- **Preconditions:** Source code available.
+- **Action:** Verify all DrawDebug calls are guarded.
+- **Expected Outcome:** No unguarded debug draws.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: all drawing in #if !UE_BUILD_SHIPPING.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** Static analysis / grep test.
+
+### TC-0480
+- **Name:** EditorLacheArcOnlyWhenSelectedAndNotGameWorld
+- **Registry String:** `ClimbingSystem.Debug.EditorArc.OnlyWhenSelectedAndNotGameWorld`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Editor Lache arc preview
+- **Behavior Tested:** Editor Lache arc draws only when IsSelected()=true AND !IsGameWorld().
+- **Preconditions:** Editor build; bDrawDebug=true.
+- **Action:** Test with selected+editor, selected+game, unselected+editor.
+- **Expected Outcome:** Only selected+editor draws arc.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: IsSelected() + !IsGameWorld() gate.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** Requires WITH_EDITOR build.
+
+### TC-0481
+- **Name:** DebugDetectionTracesNotDrawnWhenDisabled
+- **Registry String:** `ClimbingSystem.Debug.Detection.TracesNotDrawnWhenDisabled`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Debug visualization
+- **Behavior Tested:** No detection traces drawn when bDrawDebug=false.
+- **Preconditions:** bDrawDebug=false.
+- **Action:** Tick.
+- **Expected Outcome:** Zero detection trace draw calls.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Debug must be fully gated.
+- **Extends:** TC-0462
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0482
+- **Name:** WarpTargetLadderEnterBottomRotation
+- **Registry String:** `ClimbingSystem.WarpTarget.LadderEnterBottom.RotationMatchesLadder`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** WarpTarget_LadderEnterBottom rotation
+- **Behavior Tested:** WarpTarget_LadderEnterBottom rotation aligns character to face ladder.
+- **Preconditions:** Ladder facing +X.
+- **Action:** Register warp target; check rotation.
+- **Expected Outcome:** Rotation faces ladder surface.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Rotation alignment for enter animation.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0483
+- **Name:** WarpTargetLedgeGrabAngledSurface
+- **Registry String:** `ClimbingSystem.WarpTarget.LedgeGrab.RotationOnAngledSurface`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** WarpTarget_LedgeGrab rotation on angled surface
+- **Behavior Tested:** WarpTarget_LedgeGrab rotation correctly projects onto angled surface normal.
+- **Preconditions:** Wall at 45° angle.
+- **Action:** Grab ledge; check warp target rotation.
+- **Expected Outcome:** Rotation yaw matches angled surface normal.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Angled surfaces must produce correct warp rotation.
+- **Extends:** TC-0461
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0484
+- **Name:** MantleLowVsHighThresholdBoundary
+- **Registry String:** `ClimbingSystem.WarpTarget.Mantle.LowVsHighThresholdBoundarySelection`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMantleDetectionTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Mantle warp target selection at boundary
+- **Behavior Tested:** Height exactly at MantleLowMaxHeight(100cm) selects MantleLow; 101cm selects MantleHigh.
+- **Preconditions:** Two obstacles at 100cm and 101cm.
+- **Action:** Test both.
+- **Expected Outcome:** 100cm -> WarpTarget_MantleLow; 101cm -> WarpTarget_MantleHigh.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Boundary between low and high mantle warp targets.
+- **Extends:** TC-0459
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0485
+- **Name:** LedgeHangIKHandTraceMissWeightFade
+- **Registry String:** `ClimbingSystem.IK.LedgeHang.HandTraceMissFadesWeight`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateLedgeHangIK
+- **Behavior Tested:** When hand traces find no wall contact, IK weight decreases toward zero.
+- **Preconditions:** Character in Hanging; IK weight at 1.0; wall removed.
+- **Action:** Call UpdateLedgeHangIK.
+- **Expected Outcome:** IK weight < 1.0 and trending toward 0.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: exceeding MaxReachDistance fades weight to zero.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0486
+- **Name:** LadderIKRungTraceMissDisablesFoot
+- **Registry String:** `ClimbingSystem.IK.Ladder.RungTraceMissDisablesFoot`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateLadderIK
+- **Behavior Tested:** When rung trace misses for one foot, that foot's IK is disabled for that frame.
+- **Preconditions:** Character on ladder; one rung trace returns no hit.
+- **Action:** Call UpdateLadderIK.
+- **Expected Outcome:** Affected foot IK weight == 0; other foot unchanged.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Missing rung must not crash IK.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0487
+- **Name:** CornerTransitionIKAllFourLimbsUpdate
+- **Registry String:** `ClimbingSystem.IK.CornerTransition.AllFourLimbsUpdateDuringTransition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Corner transition FABRIK
+- **Behavior Tested:** During corner transition all four FABRIK limb targets update each tick.
+- **Preconditions:** Character mid-corner-transition.
+- **Action:** Advance transition; record limb positions.
+- **Expected Outcome:** Each limb target changes as transition progresses.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: FABRIK for all four limbs during corner.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0488
+- **Name:** IKWeightBlendInOnStateEntry
+- **Registry String:** `ClimbingSystem.IK.Weight.BlendInOnStateEntry`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** IK weight blend-in
+- **Behavior Tested:** IK weight blends from 0 to 1 on climbing state entry.
+- **Preconditions:** Character transitions to Hanging; IK weight starts at 0.
+- **Action:** Tick for half blend time.
+- **Expected Outcome:** IK weight between 0 and 1.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Blend-in prevents IK pop.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0489
+- **Name:** IKNullAnimInstanceNoCrash
+- **Registry String:** `ClimbingSystem.IK.Safety.NullAnimInstanceNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** IK update with null AnimInstance
+- **Behavior Tested:** IK update functions do not crash when AnimInstance is null.
+- **Preconditions:** AnimInstance forcibly null.
+- **Action:** Call all IK update functions.
+- **Expected Outcome:** No crash; functions return early.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Defensive null safety.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0490
+- **Name:** PerLimbMaxReachDistanceIndependent
+- **Registry String:** `ClimbingSystem.IK.Reach.PerLimbMaxReachDistanceIndependent`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Per-limb IK reach clamping
+- **Behavior Tested:** Each limb respects its own MaxReachDistance independently.
+- **Preconditions:** Four limbs with targets beyond limit.
+- **Action:** Run IK solve.
+- **Expected Outcome:** Each limb clamped independently; no cross-limb contamination.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: per-limb MaxReachDistance.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0491
+- **Name:** IKFadeOutBlendTimeZeroImmediate
+- **Registry String:** `ClimbingSystem.IK.Weight.FadeOutBlendTimeZeroIsImmediate`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** IK fade-out with zero blend time
+- **Behavior Tested:** IKFadeOutBlendTime=0 drops weight to 0 in one tick without crash.
+- **Preconditions:** IK weight at 1.0; IKFadeOutBlendTime=0.
+- **Action:** Trigger fade-out; tick once.
+- **Expected Outcome:** IK weight == 0; no crash.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero blend time must not divide by zero.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0492
+- **Name:** ShimmyPlaybackRateMinAtLowestSpeed
+- **Registry String:** `ClimbingSystem.Shimmy.PlaybackRate.MinAtLowestSpeed`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy playback rate
+- **Behavior Tested:** Playback rate clamps to ShimmyPlaybackRateMin(0.4) at lowest speed.
+- **Preconditions:** Character shimmying at minimum speed above deadzone.
+- **Action:** Check montage play rate.
+- **Expected Outcome:** Rate == 0.4.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: ShimmyPlaybackRateMin=0.4.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0493
+- **Name:** ShimmyPlaybackRateMaxAtFullSpeed
+- **Registry String:** `ClimbingSystem.Shimmy.PlaybackRate.MaxAtFullSpeed`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy playback rate
+- **Behavior Tested:** Playback rate clamps to ShimmyPlaybackRateMax(1.2) at full speed.
+- **Preconditions:** Character shimmying at max speed.
+- **Action:** Check montage play rate.
+- **Expected Outcome:** Rate == 1.2.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: ShimmyPlaybackRateMax=1.2.
+- **Extends:** TC-0492
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0494
+- **Name:** ShimmyPlaybackRateInterpolation
+- **Registry String:** `ClimbingSystem.Shimmy.PlaybackRate.InterpolatesBetweenMinMax`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy playback rate interpolation
+- **Behavior Tested:** Rate interpolates linearly between min and max for mid-range speeds.
+- **Preconditions:** Speed at 50% of max.
+- **Action:** Check rate.
+- **Expected Outcome:** Rate ~0.8.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Lerp(Min, Max, NormalizedSpeed).
+- **Extends:** TC-0492
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0495
+- **Name:** ShimmyOverhangPenaltyApplied
+- **Registry String:** `ClimbingSystem.Shimmy.Speed.OverhangPenaltyReducesSpeed`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy overhang penalty
+- **Behavior Tested:** Shimmy speed reduced by OverhangPenalty on overhanging surfaces.
+- **Preconditions:** Overhanging surface.
+- **Action:** Compute shimmy speed.
+- **Expected Outcome:** Speed = flat speed * OverhangPenalty.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: OverhangPenalty formula.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0496
+- **Name:** MaxContinuousShimmyDistanceTrigger
+- **Registry String:** `ClimbingSystem.Shimmy.Reposition.MaxDistanceTrigger`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Shimmy reposition trigger
+- **Behavior Tested:** 300cm of lateral shimmy triggers ShimmyReposition.
+- **Preconditions:** Character shimmying.
+- **Action:** Tick until 300cm accumulated.
+- **Expected Outcome:** ShimmyReposition fires.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: MaxContinuousShimmyDistance=300cm.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0497
+- **Name:** ShimmyDistanceResetAfterReposition
+- **Registry String:** `ClimbingSystem.Shimmy.Reposition.AccumulatorResetAfterReposition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy distance accumulator
+- **Behavior Tested:** ContinuousShimmyDistance resets to 0 after reposition.
+- **Preconditions:** Reposition just completed.
+- **Action:** Check accumulator.
+- **Expected Outcome:** Accumulator == 0.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Must reset to allow next reposition.
+- **Extends:** TC-0496
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0498
+- **Name:** BracedShimmySpeedMatchesLedgeFormula
+- **Registry String:** `ClimbingSystem.Shimmy.Speed.BracedUsesLedgeFormula`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Braced shimmy speed
+- **Behavior Tested:** Braced shimmy uses same formula as ledge shimmy.
+- **Preconditions:** Identical inputs for both.
+- **Action:** Compute both speeds.
+- **Expected Outcome:** Speeds equal.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: same hysteresis logic.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0499
+- **Name:** TickLadderStateYAxisMovement
+- **Registry String:** `ClimbingSystem.Ladder.Tick.YAxisMovementApplied`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Vertical input translated into world-space position delta each tick.
+- **Preconditions:** Character on ladder; Y input = 1.0.
+- **Action:** Tick.
+- **Expected Outcome:** Z delta == LadderClimbSpeed * DeltaTime.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_ClimbMove Y-axis drives ladder.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0500
+- **Name:** LadderTopExitTriggersTransition
+- **Registry String:** `ClimbingSystem.Ladder.Exit.TopReachedTriggersTransition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Reaching ladder top triggers LadderTransition.
+- **Preconditions:** Character near top; climbing up.
+- **Action:** Tick until top.
+- **Expected Outcome:** State = LadderTransition.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Top exit is primary ladder exit.
+- **Extends:** TC-0499
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0501
+- **Name:** LadderBottomExitTriggersTransition
+- **Registry String:** `ClimbingSystem.Ladder.Exit.BottomReachedTriggersTransition`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::TickLadderState
+- **Behavior Tested:** Reaching ladder bottom triggers LadderTransition.
+- **Preconditions:** Character near bottom; climbing down.
+- **Action:** Tick until bottom.
+- **Expected Outcome:** State = LadderTransition.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Bottom exit path.
+- **Extends:** TC-0500
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0502
+- **Name:** LadderRungSnapGrid
+- **Registry String:** `ClimbingSystem.Ladder.Snap.PositionSnapsToRungGrid`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Ladder rung snap
+- **Behavior Tested:** Position snaps to nearest LadderRungSpacing interval when stopping.
+- **Preconditions:** LadderRungSpacing=50; character at 73cm.
+- **Action:** Release input; tick.
+- **Expected Outcome:** Position snaps to 50 or 100cm.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: LadderRungSpacing drives snap grid.
+- **Extends:** TC-0499
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0503
+- **Name:** LadderFastAscendSprintModifier
+- **Registry String:** `ClimbingSystem.Ladder.Speed.FastAscendUsesSprintModifier`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Ladder sprint speed
+- **Behavior Tested:** Sprint applies LadderSprintModifier to base climb speed.
+- **Preconditions:** bSprintHeld=true; climbing up.
+- **Action:** Compute speed.
+- **Expected Outcome:** Speed = base * sprintModifier.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_Sprint fast ascent.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0504
+- **Name:** LadderFastDescendCrouchModifier
+- **Registry String:** `ClimbingSystem.Ladder.Speed.FastDescendUsesCrouchModifier`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Ladder crouch speed
+- **Behavior Tested:** Crouch applies LadderCrouchModifier to descend speed.
+- **Preconditions:** bCrouchHeld=true; climbing down.
+- **Action:** Compute speed.
+- **Expected Outcome:** Speed = base * crouchModifier.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: IA_Crouch fast descent.
+- **Extends:** TC-0503
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0505
+- **Name:** DetectionDuringFallingEveryTick
+- **Registry String:** `ClimbingSystem.Detection.Frequency.FallingRunsEveryTick`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Detection scan frequency
+- **Behavior Tested:** During MOVE_Falling, detection runs every tick.
+- **Preconditions:** Character falling.
+- **Action:** Tick 5 times; count scans.
+- **Expected Outcome:** 5 scans.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: every tick during active climbing/falling.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0506
+- **Name:** DetectionSuppressedInCommittedStates
+- **Registry String:** `ClimbingSystem.Detection.Frequency.CommittedStatesSkipScan`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Detection scan suppression
+- **Behavior Tested:** Detection scans do not run in committed states.
+- **Preconditions:** Character in LadderTransition.
+- **Action:** Tick 10 times; count scans.
+- **Expected Outcome:** 0 scans.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: no scan during committed states.
+- **Extends:** TC-0505
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0507
+- **Name:** DetectionFrequencyThreePhaseTransition
+- **Registry String:** `ClimbingSystem.Detection.Frequency.TransitionAcrossThreePhases`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Detection frequency transitions
+- **Behavior Tested:** Frequency shifts correctly: ground(timer) -> climbing(per-tick) -> committed(none).
+- **Preconditions:** Character on ground.
+- **Action:** Transition through phases; verify scan frequency each.
+- **Expected Outcome:** Each phase has correct frequency.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: different scan rates per phase.
+- **Extends:** TC-0505
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0508
+- **Name:** ClimbableTagBypassesGeometry
+- **Registry String:** `ClimbingSystem.Detection.Tag.ClimbableTagBypassesGeometry`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Climbable tag bypass
+- **Behavior Tested:** Surface tagged Climbable accepted without geometric validation.
+- **Preconditions:** Surface with Climbable tag but abnormal angle.
+- **Action:** Run detection.
+- **Expected Outcome:** Surface accepted.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: Climbable always included, bypasses geometric validation.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0509
+- **Name:** ClimbableOneWayApproachTolerance
+- **Registry String:** `ClimbingSystem.Detection.OneWay.ApproachToleranceEnforced`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** ClimbableOneWay tolerance
+- **Behavior Tested:** OneWay surfaces accepted within tolerance; rejected outside.
+- **Preconditions:** OneWay surface.
+- **Action:** Test at boundary angles.
+- **Expected Outcome:** Within tolerance accepted; outside rejected.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: approach vector validated.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0510
+- **Name:** AllUPropertyDefaultsMatchSpec
+- **Registry String:** `ClimbingSystem.Contracts.Defaults.AllUPropertyDefaultsMatchSpec`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterContractTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** UPROPERTY defaults
+- **Behavior Tested:** Every UPROPERTY with spec-defined default matches in CDO.
+- **Preconditions:** CDO instantiated.
+- **Action:** Read each property; compare to spec.
+- **Expected Outcome:** All match.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec compliance.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** Comprehensive sweep of all spec-listed constants.
+
+### TC-0511
+- **Name:** StateConfigsTMapHasAllEntries
+- **Registry String:** `ClimbingSystem.Contracts.StateConfigs.TMapHasAllSeventeenEntries`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterContractTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** StateConfigs TMap completeness
+- **Behavior Tested:** StateConfigs has exactly 17 entries (one per EClimbingState).
+- **Preconditions:** CDO instantiated.
+- **Action:** Count entries; verify all enum values present.
+- **Expected Outcome:** Num() == 17; no missing key.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: missing key = undefined behavior.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0512
+- **Name:** GetLifetimeReplicatedPropsComplete
+- **Registry String:** `ClimbingSystem.Contracts.Replication.GetLifetimeReplicatedPropsComplete`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterContractTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** GetLifetimeReplicatedProps completeness
+- **Behavior Tested:** Every CPF_Net property appears in GetLifetimeReplicatedProps.
+- **Preconditions:** Class reflection available.
+- **Action:** Enumerate CPF_Net properties; compare to registered list.
+- **Expected Outcome:** Sets identical.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Omitted properties silently fail to replicate.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0513
+- **Name:** OnClimbingStateReplicatedRoutesToEnter
+- **Registry String:** `ClimbingSystem.Multiplayer.StateReplicated.RoutesToOnStateEnter`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::OnClimbingStateReplicated
+- **Behavior Tested:** Routes to OnStateEnter for new state on proxy.
+- **Preconditions:** Simulated proxy; OldState=None, NewState=Hanging.
+- **Action:** Call OnClimbingStateReplicated(None, Hanging).
+- **Expected Outcome:** OnStateEnter(Hanging) executed.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: OnRep routes to entry/exit for proxies.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0514
+- **Name:** OnClimbingStateReplicatedRoutesToExit
+- **Registry String:** `ClimbingSystem.Multiplayer.StateReplicated.RoutesToOnStateExit`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::OnClimbingStateReplicated
+- **Behavior Tested:** Routes to OnStateExit for old state on proxy.
+- **Preconditions:** Simulated proxy; OldState=Hanging, NewState=None.
+- **Action:** Call OnClimbingStateReplicated(Hanging, None).
+- **Expected Outcome:** OnStateExit(Hanging) executed.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Exit cleanup must run on proxies.
+- **Extends:** TC-0513
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0515
+- **Name:** UpdateBracedWallIKValidTargets
+- **Registry String:** `ClimbingSystem.IK.BracedWall.ValidTargetsWhenWallPresent`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateBracedWallIK
+- **Behavior Tested:** Produces valid hand/foot IK targets when wall present.
+- **Preconditions:** Character in BracedWall; wall behind.
+- **Action:** Call UpdateBracedWallIK.
+- **Expected Outcome:** All 4 IK targets non-zero and on wall surface.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Braced IK requires wall contact.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0516
+- **Name:** UpdateBracedWallIKNoTargetsNoWall
+- **Registry String:** `ClimbingSystem.IK.BracedWall.NoTargetsWhenNoWallContact`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimInstanceTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::UpdateBracedWallIK
+- **Behavior Tested:** No IK targets when no wall contact; weights fade to 0.
+- **Preconditions:** Character in BracedWall; wall removed.
+- **Action:** Call UpdateBracedWallIK.
+- **Expected Outcome:** IK weights fade to 0; no crash.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Missing wall must not crash.
+- **Extends:** TC-0515
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0517
+- **Name:** ServerGrabNullHitComponentRejected
+- **Registry String:** `ClimbingSystem.Multiplayer.ServerGrab.NullHitComponentRejected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Server_AttemptGrab null safety
+- **Behavior Tested:** Null HitComponent in net payload triggers rejection.
+- **Preconditions:** Server; net payload with null component.
+- **Action:** Call Server_AttemptGrab.
+- **Expected Outcome:** Client_RejectStateTransition called.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Null component must not crash server.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0518
+- **Name:** ServerGrabInvalidPayloadRejected
+- **Registry String:** `ClimbingSystem.Multiplayer.ServerGrab.InvalidPayloadBValidFalseRejected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Server_AttemptGrab validation
+- **Behavior Tested:** bValid=false in net payload triggers rejection.
+- **Preconditions:** Server; net payload with bValid=false.
+- **Action:** Call Server_AttemptGrab.
+- **Expected Outcome:** Client_RejectStateTransition called.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Invalid payload must be rejected.
+- **Extends:** TC-0517
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0519
+- **Name:** TransitionToSameStateNoOpRuntime
+- **Registry String:** `ClimbingSystem.StateMachine.Transition.SameStateNoOpAtRuntime`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::TransitionToState
+- **Behavior Tested:** Transitioning to same state is a no-op at runtime (no entry/exit calls).
+- **Preconditions:** Character in Hanging.
+- **Action:** Call TransitionToState(Hanging).
+- **Expected Outcome:** No OnStateExit or OnStateEnter called; state unchanged.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Same-state transition must be idempotent.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0520
+- **Name:** GetMontageForSlotMAXEnumReturnsNull
+- **Registry String:** `ClimbingSystem.Animation.GetMontageForSlot.MAXEnumReturnsNull`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationSetTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::GetMontageForSlot
+- **Behavior Tested:** MAX enum value returns null without crash.
+- **Preconditions:** Default character.
+- **Action:** Call GetMontageForSlot(MAX).
+- **Expected Outcome:** Returns null; no crash.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Defensive test for invalid enum.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0521
+- **Name:** AudioUnmappedSoundTypeNoCrash
+- **Registry String:** `ClimbingSystem.Audio.Dispatch.UnmappedSoundTypeNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingSoundNotifyTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Audio dispatch
+- **Behavior Tested:** Dispatching EClimbSoundType not in ClimbingSounds map does not crash.
+- **Preconditions:** ClimbingSounds map missing HandGrab entry.
+- **Action:** Dispatch HandGrab.
+- **Expected Outcome:** No crash; no sound played.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Missing map entry must not crash.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0522
+- **Name:** CapsuleRestoreUncachedDimsNoCrash
+- **Registry String:** `ClimbingSystem.Capsule.Restore.UncachedDimsNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Capsule restore
+- **Behavior Tested:** Capsule restore when original dims were never cached does not crash.
+- **Preconditions:** Character that never entered climbing.
+- **Action:** Force capsule restore path.
+- **Expected Outcome:** No crash; capsule unchanged.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Defensive test for first-time edge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0523
+- **Name:** IKManagerZeroBudgetDisablesAll
+- **Registry String:** `ClimbingSystem.IK.Budget.ZeroMaxDisablesAllIK`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** IK manager budget
+- **Behavior Tested:** MaxSimultaneousIKCharacters=0 disables all IK.
+- **Preconditions:** MaxSimultaneousIKCharacters=0; 2 characters climbing.
+- **Action:** Update IK.
+- **Expected Outcome:** All IK weights == 0 for all characters.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero budget must disable, not crash.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0524
+- **Name:** ShimmyDeadzoneZeroEveryInputUpdates
+- **Registry String:** `ClimbingSystem.Shimmy.Deadzone.ZeroEveryInputUpdatesDirection`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy direction deadzone
+- **Behavior Tested:** ShimmyDirectionDeadzone=0 means every non-zero input updates direction.
+- **Preconditions:** ShimmyDirectionDeadzone=0; input X=0.001.
+- **Action:** Call Input_ClimbMove.
+- **Expected Outcome:** CommittedShimmyDir updated.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero deadzone = no filtering.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0525
+- **Name:** LacheLaunchSpeedZeroVerticalDrop
+- **Registry String:** `ClimbingSystem.Lache.Arc.LaunchSpeedZeroVerticalDrop`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Lache arc with zero speed
+- **Behavior Tested:** LacheLaunchSpeed=0 produces vertical drop arc; no crash.
+- **Preconditions:** LacheLaunchSpeed=0.
+- **Action:** Compute arc.
+- **Expected Outcome:** Arc is purely vertical (X/Y unchanged); no crash.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero speed must not crash.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0526
+- **Name:** LacheArcTraceStepsZeroNoCrash
+- **Registry String:** `ClimbingSystem.Lache.Arc.TraceStepsZeroNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Lache arc with zero steps
+- **Behavior Tested:** LacheArcTraceSteps=0 produces no arc; no crash.
+- **Preconditions:** LacheArcTraceSteps=0.
+- **Action:** Trigger Lache.
+- **Expected Outcome:** No arc computed; no crash; Lache fails gracefully.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero steps must not divide by zero.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0527
+- **Name:** RagdollRecoveryTimeZeroImmediateRecovery
+- **Registry String:** `ClimbingSystem.Ragdoll.Recovery.TimeZeroImmediateRecovery`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterPhysicsAudioTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Ragdoll recovery timer
+- **Behavior Tested:** RagdollRecoveryTime=0 triggers immediate recovery.
+- **Preconditions:** RagdollRecoveryTime=0; character enters ragdoll.
+- **Action:** Tick once.
+- **Expected Outcome:** Recovery begins immediately.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero timer must not hang.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0528
+- **Name:** CameraNudgeStrengthZeroNoDisplacement
+- **Registry String:** `ClimbingSystem.Camera.Nudge.StrengthZeroNoDisplacement`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterDetectionCameraTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Camera nudge
+- **Behavior Tested:** CameraNudgeStrength=0 produces no camera displacement.
+- **Preconditions:** CameraNudgeStrength=0; camera beyond activation angle.
+- **Action:** Tick camera.
+- **Expected Outcome:** No nudge rotation applied.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero strength = disabled nudge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0529
+- **Name:** DetectionScanIntervalZeroPerTick
+- **Registry String:** `ClimbingSystem.Detection.ScanInterval.ZeroMeansPerTick`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Detection scan interval
+- **Behavior Tested:** DetectionScanInterval=0 results in per-tick scanning.
+- **Preconditions:** DetectionScanInterval=0; character on ground.
+- **Action:** Tick 5 times; count scans.
+- **Expected Outcome:** 5 scans (one per tick).
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero interval = per-tick.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0530
+- **Name:** LadderRungSpacingZeroNoCrash
+- **Registry String:** `ClimbingSystem.Ladder.RungSpacing.ZeroNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementComponentTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Ladder rung spacing
+- **Behavior Tested:** DefaultLadderRungSpacing=0 does not crash; no snap applied.
+- **Preconditions:** DefaultLadderRungSpacing=0.
+- **Action:** Tick ladder state.
+- **Expected Outcome:** No crash; no snap.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Zero spacing must not divide by zero.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0531
+- **Name:** GrabFailMontageNameCorrect
+- **Registry String:** `ClimbingSystem.Anim.GrabFail.MontageNameIsGrabFail`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationSetTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** GrabFail montage slot
+- **Behavior Tested:** GrabFail montage slot maps to the GrabFail animation slot.
+- **Preconditions:** Character with GrabFail montage assigned.
+- **Action:** Call GetMontageForSlot(GrabFail).
+- **Expected Outcome:** Returns the assigned GrabFail montage.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: GrabFail montage on rejection.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0532
+- **Name:** ClimbingMontageSlotDefaultValue
+- **Registry String:** `ClimbingSystem.Anim.MontageSlot.DefaultValueIsFullBody`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingAnimationSetTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** ClimbingMontageSlot default
+- **Behavior Tested:** ClimbingMontageSlot defaults to FName("FullBody").
+- **Preconditions:** Default character.
+- **Action:** Read ClimbingMontageSlot.
+- **Expected Outcome:** == FName("FullBody").
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: default "FullBody".
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0533
+- **Name:** ServerGrabNullComponentNoStateCorruption
+- **Registry String:** `ClimbingSystem.Multiplayer.ServerGrab.NullComponentNoStateCorruption`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Server_AttemptGrab null safety
+- **Behavior Tested:** Null HitComponent leaves state completely unchanged (no intermediate corruption).
+- **Preconditions:** Server in None state; null component payload.
+- **Action:** Call Server_AttemptGrab.
+- **Expected Outcome:** State remains None; no partial transition.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Null must not corrupt state machine.
+- **Extends:** TC-0517
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0534
+- **Name:** SameStateTransitionNoMontageRestart
+- **Registry String:** `ClimbingSystem.StateMachine.Transition.SameStateNoMontageRestart`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Same-state transition montage behavior
+- **Behavior Tested:** Same-state transition does not restart playing montage.
+- **Preconditions:** Character in Hanging; HangIdle montage playing.
+- **Action:** Call TransitionToState(Hanging).
+- **Expected Outcome:** Montage continues uninterrupted.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Restarting montage causes visual pop.
+- **Extends:** TC-0519
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0535
+- **Name:** NegativeMaxIKCharactersClampedToZero
+- **Registry String:** `ClimbingSystem.IK.Budget.NegativeMaxClampedToZero`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** Unit
+- **Priority:** P3
+- **System Under Test:** IK manager budget
+- **Behavior Tested:** Negative MaxSimultaneousIKCharacters clamped to zero.
+- **Preconditions:** MaxSimultaneousIKCharacters=-1.
+- **Action:** Update IK.
+- **Expected Outcome:** All IK disabled; no crash.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Negative value must not cause underflow.
+- **Extends:** TC-0523
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0543
+- **Name:** IntegrationFullLadderLifecycle
+- **Registry String:** `ClimbingSystem.Integration.Ladder.FullLifecycleBottomToTopToLocomotion`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Full ladder lifecycle
+- **Behavior Tested:** Full None->LadderTransition->OnLadder->Sprint->LadderTransition->None lifecycle.
+- **Preconditions:** Character at bottom of ladder.
+- **Action:** Enter ladder; climb up with sprint; exit at top.
+- **Expected Outcome:** All transitions valid; capsule restored; IMC cleaned.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Full ladder integration.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0544
+- **Name:** IntegrationFullBracedWallLifecycle
+- **Registry String:** `ClimbingSystem.Integration.BracedWall.FullLifecycleDetectToHangToDrop`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Full braced wall lifecycle
+- **Behavior Tested:** Full None->BracedWall->lip->Hanging->Shimmy->Drop->None lifecycle.
+- **Preconditions:** Character near braced wall with lip above.
+- **Action:** Execute full chain.
+- **Expected Outcome:** All transitions valid; SetBase lifecycle correct.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Full braced wall integration.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0545
+- **Name:** IntegrationFullRagdollLifecycle
+- **Registry String:** `ClimbingSystem.Integration.Ragdoll.FullLifecycleBreakToRecoveryToLocomotion`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Full ragdoll lifecycle
+- **Behavior Tested:** Full Hanging->GrabBreak->Ragdoll->RecoveryTimer->GetUp->None lifecycle.
+- **Preconditions:** Character in Hanging.
+- **Action:** Apply impulse above threshold; wait recovery; verify get-up.
+- **Expected Outcome:** Full cycle completes; capsule/physics restored.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Full ragdoll integration.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0546
+- **Name:** IntegrationMantleStepUpNoStateChange
+- **Registry String:** `ClimbingSystem.Integration.Mantle.StepUpNoClimbingStateChange`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Mantle step-up path
+- **Behavior Tested:** CMC step-up below MaxStepHeight never enters climbing state.
+- **Preconditions:** Character walking toward 30cm obstacle.
+- **Action:** Walk into obstacle.
+- **Expected Outcome:** CMC step-up; state remains None; no montage.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: <=MantleStepMaxHeight -> CMC step-up.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0547
+- **Name:** IntegrationBracedShimmyCornerTransition
+- **Registry String:** `ClimbingSystem.Integration.BracedShimmy.CornerTransitionAndResume`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Braced shimmy corner
+- **Behavior Tested:** 90-degree corner traversal during braced shimmy.
+- **Preconditions:** Character in BracedShimmying near corner.
+- **Action:** Shimmy into corner; complete transition; resume.
+- **Expected Outcome:** Corner transition completes; braced shimmy resumes.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Corner during braced shimmy.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0548
+- **Name:** IntegrationLacheAutoCinematicFullFlow
+- **Registry String:** `ClimbingSystem.Integration.Lache.AutoCinematicLockAndRelease`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Lache auto-cinematic
+- **Behavior Tested:** Camera locks during arc, unlocks after catch.
+- **Preconditions:** bAutoLacheCinematic=true; target within threshold.
+- **Action:** Trigger Lache; catch; verify camera.
+- **Expected Outcome:** Camera locked during flight; released after catch.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: bAutoLacheCinematic auto-calls LockCameraToFrame.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0549
+- **Name:** IntegrationIdleVariationFullCycle
+- **Registry String:** `ClimbingSystem.Integration.IdleVariation.TwoDistinctVariationsPlayInSequence`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Idle variation system
+- **Behavior Tested:** Two distinct variation montages play in sequence after delays.
+- **Preconditions:** Character in Hanging; 3+ idle variations assigned.
+- **Action:** Wait for two variation cycles.
+- **Expected Outcome:** Two different variations play; no consecutive repeat.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: bPreventConsecutiveVariationRepeat.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0550
+- **Name:** IntegrationFreefallReGrabFullFlow
+- **Registry String:** `ClimbingSystem.Integration.Freefall.ReGrabFullFlow`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Freefall re-grab
+- **Behavior Tested:** Full fall->detect->grab->Hanging chain.
+- **Preconditions:** Character falling; ledge within reach; bEnableFallingGrab=true.
+- **Action:** Fall near ledge; trigger grab.
+- **Expected Outcome:** Character grabs ledge; enters Hanging.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Full freefall re-grab integration.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0551
+- **Name:** NetworkServerGrabFullChain
+- **Registry String:** `ClimbingSystem.Network.ServerGrab.FullChainConfirmProxyIK`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Full replication chain
+- **Behavior Tested:** Server_AttemptGrab->confirm->OnRep->proxy IK update full chain.
+- **Preconditions:** Listen server with client.
+- **Action:** Client grabs; server confirms; proxy updates.
+- **Expected Outcome:** All three in Hanging; proxy IK active.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Full network round-trip.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** YES
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0552
+- **Name:** NetworkClientPredictionRollbackFullFlow
+- **Registry String:** `ClimbingSystem.Network.ClientRollback.PredictRejectGrabFailLerpNone`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Client prediction rollback
+- **Behavior Tested:** Predict->reject->GrabFail->lerp back->None full flow.
+- **Preconditions:** Client predicts Hanging; server rejects.
+- **Action:** Execute full rollback.
+- **Expected Outcome:** GrabFail plays; state returns to None.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: rejection triggers rollback.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** YES
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0553
+- **Name:** NetworkTwoClientsSimultaneousGrabDrop
+- **Registry String:** `ClimbingSystem.Network.MultiClient.SimultaneousGrabDropIndependent`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Multi-client independence
+- **Behavior Tested:** Two clients: one grabs, one drops simultaneously; independent state.
+- **Preconditions:** Listen server; two clients.
+- **Action:** Client A grabs; Client B drops simultaneously.
+- **Expected Outcome:** A=Hanging; B=None; no cross-contamination.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Multi-client state independence.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** YES
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0554
+- **Name:** NetworkProxyShimmyMontageCorrect
+- **Registry String:** `ClimbingSystem.Network.Proxy.ShimmyMontageMatchesDirection`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Proxy shimmy montage
+- **Behavior Tested:** Proxy plays correct directional shimmy montage based on replicated direction.
+- **Preconditions:** Proxy; CommittedShimmyDir replicated as -1.
+- **Action:** OnRep fires.
+- **Expected Outcome:** ShimmyLeft montage playing on proxy.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Proxy must show correct shimmy direction.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0555
+- **Name:** NetworkServerDropDuringLacheCancelsArc
+- **Registry String:** `ClimbingSystem.Network.ServerDrop.DuringLacheInAirCancelsArc`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Server_Drop during Lache
+- **Behavior Tested:** Server_Drop in LacheInAir cancels arc; returns to None.
+- **Preconditions:** Character in LacheInAir.
+- **Action:** Call Server_Drop.
+- **Expected Outcome:** State = None; arc cancelled.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Drop must work during Lache flight.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** APPROX
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0556
+- **Name:** NetworkAnchorReplicationFollowsServer
+- **Registry String:** `ClimbingSystem.Network.Anchor.ReplicationFollowsServerMovement`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Anchor replication
+- **Behavior Tested:** Moving platform anchor replicates to client.
+- **Preconditions:** Listen server; anchor moving.
+- **Action:** Move anchor on server; verify client follows.
+- **Expected Outcome:** Client anchor position matches server within tolerance.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Anchor replication for moving platforms.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** YES
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0557
+- **Name:** CommittedStateMontageCompletionExits
+- **Registry String:** `ClimbingSystem.StateMachine.CommittedState.MontageCompletionExitsCorrectly`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** Committed state exit
+- **Behavior Tested:** All committed states exit correctly on montage completion.
+- **Preconditions:** Character in each committed state.
+- **Action:** Complete montage for each; verify exit state.
+- **Expected Outcome:** Each exits to correct target state.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Committed states must exit on montage end.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** Tests CornerTransition, LadderTransition, Mantling, LacheCatch, Ragdoll.
+
+### TC-0558
+- **Name:** TickBracedWallNoLipNoInputStays
+- **Registry String:** `ClimbingSystem.StateMachine.BracedWall.NoLipNoInputStaysBracedWall`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementEdgeCaseTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::TickBracedWallState
+- **Behavior Tested:** No lip + no input = stays BracedWall.
+- **Preconditions:** BracedWall; no lip above; no input.
+- **Action:** Tick.
+- **Expected Outcome:** State remains BracedWall.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Idle braced wall must be stable.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0559
+- **Name:** TickBracedShimmyLipFoundTransitionsHanging
+- **Registry String:** `ClimbingSystem.StateMachine.BracedShimmy.LipFoundTransitionsToHanging`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementEdgeCaseTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::TickBracedShimmyingState
+- **Behavior Tested:** Lip found during braced shimmy tick transitions to Hanging.
+- **Preconditions:** BracedShimmying; lip detected above.
+- **Action:** Tick.
+- **Expected Outcome:** State = Hanging.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Lip detection during shimmy.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0560
+- **Name:** ShimmyAtExactMaxDistanceBoundary
+- **Registry String:** `ClimbingSystem.Shimmy.Distance.ExactMaxDistanceBoundaryBehavior`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Shimmy distance boundary
+- **Behavior Tested:** Exactly MaxContinuousShimmyDistance triggers boundary behavior.
+- **Preconditions:** ContinuousShimmyDistance = 300cm exactly.
+- **Action:** Tick.
+- **Expected Outcome:** ShimmyReposition triggered (>= boundary).
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Boundary test for max distance.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0561
+- **Name:** LacheArcSingleTraceStep
+- **Registry String:** `ClimbingSystem.Lache.Arc.SingleTraceStepNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingLacheRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Lache arc with 1 step
+- **Behavior Tested:** LacheArcTraceSteps=1 completes without crash.
+- **Preconditions:** LacheArcTraceSteps=1.
+- **Action:** Trigger Lache.
+- **Expected Outcome:** No crash; arc has 1 step.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Minimum step count must work.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0562
+- **Name:** DetectionSingleColumnSingleRow
+- **Registry String:** `ClimbingSystem.Detection.Grid.SingleColumnSingleRowNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingTraceTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Grid trace with 1x1
+- **Behavior Tested:** 1x1 grid fires exactly one trace; no crash.
+- **Preconditions:** LedgeGridColumns=1; LedgeGridRows=1.
+- **Action:** Run grid trace.
+- **Expected Outcome:** 1 trace fired; no crash.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Minimum grid size must work.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0563
+- **Name:** AudioAllEightSoundTypesDispatched
+- **Registry String:** `ClimbingSystem.Audio.Dispatch.AllEightSoundTypesHandled`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingSoundNotifyTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Audio dispatch coverage
+- **Behavior Tested:** All 8 EClimbSoundType values reach the dispatch handler.
+- **Preconditions:** All 8 sounds cached.
+- **Action:** Dispatch each type.
+- **Expected Outcome:** Each dispatched exactly once.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: 8 EClimbSoundType values.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** HandGrab, FootPlant, LadderRungHand, LadderRungFoot, MantleImpact, LacheLaunchGrunt, LacheCatchImpact, GrabFail.
+
+### TC-0564
+- **Name:** FreefallReGrabVelocityZeroedOnCatch
+- **Registry String:** `ClimbingSystem.Freefall.ReGrab.VelocityZeroedOnCatch`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingDetectionRuntimeTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Freefall re-grab velocity
+- **Behavior Tested:** Vertical velocity is zeroed after freefall grab.
+- **Preconditions:** Character falling; grabs ledge.
+- **Action:** Grab; check velocity.
+- **Expected Outcome:** Velocity.Z == 0 after grab.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Residual velocity would pull character off ledge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0565
+- **Name:** NetworkProxyOnRepFiresIKRefresh
+- **Registry String:** `ClimbingSystem.Network.Proxy.OnRepClimbStateFiresIKRefresh`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Proxy IK refresh on OnRep
+- **Behavior Tested:** OnRep_ClimbingState triggers IK refresh on proxy.
+- **Preconditions:** Simulated proxy; state replicated to Hanging.
+- **Action:** Call OnRep.
+- **Expected Outcome:** IK update triggered; weights non-zero.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: confirmation trace runs immediately in OnRep.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0566
+- **Name:** IntegrationLadderSprintMidClimbNoEarlyExit
+- **Registry String:** `ClimbingSystem.Integration.Ladder.SprintMidClimbNoEarlyExit`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Ladder sprint flag
+- **Behavior Tested:** Sprint flag mid-ladder does not exit state.
+- **Preconditions:** Character on ladder; climbing up.
+- **Action:** Press sprint mid-climb.
+- **Expected Outcome:** State remains OnLadder; speed increases.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Sprint must not exit ladder.
+- **Extends:** TC-0543
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+### TC-0567
+- **Name:** IntegrationRagdollRecoveryTimerUsesUPROPERTY
+- **Registry String:** `ClimbingSystem.Integration.Ragdoll.RecoveryTimerUsesUPROPERTY`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Ragdoll recovery timer
+- **Behavior Tested:** Timer respects RagdollRecoveryTime UPROPERTY, not hardcoded.
+- **Preconditions:** RagdollRecoveryTime=3.0 (non-default).
+- **Action:** Enter ragdoll; verify recovery at 3.0s not 1.5s.
+- **Expected Outcome:** Recovery at 3.0s.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Timer must use UPROPERTY value.
+- **Extends:** TC-0545
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 3
+- **Notes:** None.
+
+---
+
+
+### TC-0568
+- **Name:** EqualDistanceLedgeGrabWinsOverMantle
+- **Registry String:** `ClimbingSystem.Priority.EqualDistance.LedgeGrabWinsOverMantle`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Detection priority ordering
+- **Behavior Tested:** When ledge grab and mantle both valid at same distance, ledge grab wins.
+- **Preconditions:** Surface valid for both ledge grab and mantle at equal distance.
+- **Action:** Run detection.
+- **Expected Outcome:** Ledge grab result returned, not mantle.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: ledge grab has priority over mantle.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0569
+- **Name:** ClimbableOneWayCloserWinsOverNormalFarther
+- **Registry String:** `ClimbingSystem.Priority.OneWay.CloserOneWayWinsOverFartherNormal`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Detection priority with OneWay
+- **Behavior Tested:** ClimbableOneWay surface at closer range wins over normal surface at farther range.
+- **Preconditions:** OneWay surface at 50cm; normal surface at 100cm; approach valid for OneWay.
+- **Action:** Run detection.
+- **Expected Outcome:** OneWay surface selected.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Distance-based priority with tag interaction.
+- **Extends:** TC-0568
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0570
+- **Name:** LadderDetectionRunsSeparately
+- **Registry String:** `ClimbingSystem.Priority.Ladder.DetectionRunsSeparatelyFromLedgeMantle`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Detection priority passes
+- **Behavior Tested:** Ladder detection runs as separate pass from ledge/mantle.
+- **Preconditions:** LadderOnly surface and climbable ledge both in range.
+- **Action:** Run detection.
+- **Expected Outcome:** Ledge grab result returned (ladder only via ladder-specific path).
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: LadderOnly tag gates ladder state only.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0571
+- **Name:** MultipleValidLedgesNearestSelected
+- **Registry String:** `ClimbingSystem.Priority.MultiLedge.NearestSelected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Multi-hit detection
+- **Behavior Tested:** When detection finds multiple valid ledges, nearest is selected.
+- **Preconditions:** Two ledges at 60cm and 120cm.
+- **Action:** Run detection.
+- **Expected Outcome:** 60cm ledge selected.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Nearest-wins selection rule.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0572
+- **Name:** UnclimbableTagSkipsGeometricallyValid
+- **Registry String:** `ClimbingSystem.Priority.Unclimbable.SkipsGeometricallyValidSurface`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Tag exclusion priority
+- **Behavior Tested:** Unclimbable-tagged surface skipped even if geometrically valid.
+- **Preconditions:** Geometrically valid surface tagged Unclimbable; valid surface behind it.
+- **Action:** Run detection.
+- **Expected Outcome:** Unclimbable skipped; farther valid surface selected.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: Unclimbable always excluded.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0573
+- **Name:** MantleVsLedgeGrabAtBoundaryHeight
+- **Registry String:** `ClimbingSystem.Priority.Boundary.MantleVsLedgeGrabAtExactHeight`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Height boundary priority
+- **Behavior Tested:** At exact boundary height where both mantle and ledge grab are valid, ledge grab wins.
+- **Preconditions:** Surface at height valid for both systems.
+- **Action:** Run detection.
+- **Expected Outcome:** Ledge grab result.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: ledge grab takes priority over mantle.
+- **Extends:** TC-0568
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0574
+- **Name:** PriorityOrderDeterministicAcrossFrames
+- **Registry String:** `ClimbingSystem.Priority.Determinism.SameResultAcrossFrames`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPriorityTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Detection determinism
+- **Behavior Tested:** Detection priority order is deterministic across 10 consecutive calls.
+- **Preconditions:** Multiple surfaces in range.
+- **Action:** Run detection 10 times; compare results.
+- **Expected Outcome:** All 10 results identical.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Non-deterministic selection causes flickering.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0575
+- **Name:** ClimbUpCrouchFullFlow
+- **Registry String:** `ClimbingSystem.Integration.ClimbUp.CrouchFullFlowHangingToNone`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingIntegrationExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** ClimbUpCrouch full lifecycle
+- **Behavior Tested:** Full Hanging -> CrouchOnly clearance -> ClimbUpCrouch -> montage -> None.
+- **Preconditions:** Character hanging; CrouchOnly clearance above.
+- **Action:** Trigger ClimbUp; complete montage.
+- **Expected Outcome:** State chain: Hanging->ClimbUpCrouch->None; capsule restored.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** CrouchOnly path needs full integration test.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0576
+- **Name:** ClimbUpValidFromShimmyingState
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.ValidFromShimmyingState`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::Input_ClimbUp
+- **Behavior Tested:** ClimbUp is valid from Shimmying state (not just Hanging).
+- **Preconditions:** Character in Shimmying; valid clearance.
+- **Action:** Call Input_ClimbUp.
+- **Expected Outcome:** State transitions to ClimbingUp.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: ClimbUp valid from Hanging and Shimmying.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0577
+- **Name:** ClimbUpClearanceSweepUsesClimbingCapsule
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.ClearanceSweepUsesClimbingCapsuleDims`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** ClimbUp clearance sweep
+- **Behavior Tested:** Clearance sweep uses climbing capsule dims (48/24), not original.
+- **Preconditions:** Character hanging; original capsule larger than climbing capsule.
+- **Action:** Trigger ClimbUp; verify sweep uses climbing dims.
+- **Expected Outcome:** Clearance passes with climbing dims; would fail with original dims.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Wrong capsule dims causes false clearance failures.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0578
+- **Name:** ClimbUpNullMontageLogsWarningNoCrash
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.NullMontageLogsWarningNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** ClimbUp with null montage
+- **Behavior Tested:** ClimbUp with null montage assigned logs warning, no crash.
+- **Preconditions:** ClimbUp montage = null; character in Hanging.
+- **Action:** Trigger ClimbUp.
+- **Expected Outcome:** Warning logged; no crash; state may transition but no montage plays.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Null montage must not crash.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0579
+- **Name:** WarpTargetClimbUpLandPositionMatchesLedge
+- **Registry String:** `ClimbingSystem.WarpTarget.ClimbUpLand.PositionMatchesLedgeTop`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** WarpTarget_ClimbUpLand position
+- **Behavior Tested:** WarpTarget_ClimbUpLand position matches ledge top within 1cm.
+- **Preconditions:** Valid ClimbUp detection.
+- **Action:** Transition to ClimbingUp; compare warp target to ledge top.
+- **Expected Outcome:** Positions match within 1cm.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Warp target must align to ledge.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0580
+- **Name:** WarpTargetClimbUpLandRotationMatchesNormal
+- **Registry String:** `ClimbingSystem.WarpTarget.ClimbUpLand.RotationMatchesSurfaceNormal`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** WarpTarget_ClimbUpLand rotation
+- **Behavior Tested:** WarpTarget_ClimbUpLand rotation matches surface normal within 1 degree.
+- **Preconditions:** Valid ClimbUp detection.
+- **Action:** Transition to ClimbingUp; compare warp rotation.
+- **Expected Outcome:** Rotation matches within 1 degree.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Rotation alignment for ClimbUp animation.
+- **Extends:** TC-0579
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0581
+- **Name:** ServerClimbUpReRunsClearanceWithServerGeometry
+- **Registry String:** `ClimbingSystem.Multiplayer.ServerClimbUp.ReRunsClearanceWithServerGeometry`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** Server_AttemptClimbUp
+- **Behavior Tested:** Server re-runs clearance with server-side geometry, not client data.
+- **Preconditions:** Server; client sends ClimbUp; server has different geometry.
+- **Action:** Call Server_AttemptClimbUp.
+- **Expected Outcome:** Server uses its own clearance check result.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Server must not trust client clearance.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** APPROX
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0582
+- **Name:** ClimbUpCrouchMontageSelectionVerified
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.CrouchMontageSelectionVerified`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** ClimbUpCrouch montage selection
+- **Behavior Tested:** ClimbUpCrouch state plays the ClimbUpCrouch montage (not ClimbUp).
+- **Preconditions:** Character in Hanging; CrouchOnly clearance; ClimbUpCrouch montage assigned.
+- **Action:** Trigger ClimbUp.
+- **Expected Outcome:** ClimbUpCrouch montage playing (not ClimbUp montage).
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: CrouchOnly -> ClimbUpCrouch slot.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0583
+- **Name:** ClimbUpFromHangingFullClearance
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.FromHangingFullClearanceSelectsClimbUp`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** ClimbUp state selection
+- **Behavior Tested:** Full clearance from Hanging selects ClimbingUp state (not ClimbingUpCrouch).
+- **Preconditions:** Character in Hanging; Full clearance.
+- **Action:** Trigger ClimbUp.
+- **Expected Outcome:** State = ClimbingUp; ClimbUp montage playing.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: Full clearance -> ClimbUp.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0584
+- **Name:** ClimbUpNoClearanceRemainsHanging
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.NoClearanceRemainsInCurrentState`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** ClimbUp clearance rejection
+- **Behavior Tested:** No clearance (ClearanceType=None) keeps character in current state.
+- **Preconditions:** Character in Hanging; clearance blocked.
+- **Action:** Trigger ClimbUp.
+- **Expected Outcome:** State remains Hanging; no transition.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Spec: no clearance blocks ClimbUp.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0585
+- **Name:** ClimbUpInterruptedBlendOutNoTransition
+- **Registry String:** `ClimbingSystem.MontageCallback.ClimbUp.InterruptedBlendOutNoStateChange`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMovementFlowTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** OnClimbUpMontageBlendingOut interrupted guard
+- **Behavior Tested:** bInterrupted=true does not trigger state transition.
+- **Preconditions:** Character in ClimbingUp; montage interrupted.
+- **Action:** Trigger blend-out with bInterrupted=true.
+- **Expected Outcome:** State unchanged.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Interrupted montage must not double-transition.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0586
+- **Name:** ClimbUpFromShimmyingClearanceCrouch
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.FromShimmyingCrouchClearance`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** ClimbUp from Shimmying with CrouchOnly
+- **Behavior Tested:** ClimbUp from Shimmying with CrouchOnly clearance selects ClimbUpCrouch.
+- **Preconditions:** Character in Shimmying; CrouchOnly clearance.
+- **Action:** Trigger ClimbUp.
+- **Expected Outcome:** State = ClimbingUpCrouch.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Both source states must work with both clearance types.
+- **Extends:** TC-0576
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0587
+- **Name:** ClimbUpWarpTargetRegisteredBeforeMontage
+- **Registry String:** `ClimbingSystem.Actions.ClimbUp.WarpTargetRegisteredBeforeMontagePlay`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingClimbUpRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Warp target timing
+- **Behavior Tested:** WarpTarget_ClimbUpLand registered before ClimbUp montage begins playing.
+- **Preconditions:** Character in Hanging; valid clearance; MotionWarping present.
+- **Action:** Trigger ClimbUp; verify warp target exists before montage starts.
+- **Expected Outcome:** Warp target registered; then montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Warp target must exist before montage reads it.
+- **Extends:** TC-0579
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0588
+- **Name:** CornerOutsideLeftMontageSelected
+- **Registry String:** `ClimbingSystem.Actions.Corner.OutsideLeftMontageSelected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Corner montage selection
+- **Behavior Tested:** CornerOutsideLeft montage selected when bCurrentCornerIsInside=false and CommittedShimmyDir=-1.
+- **Preconditions:** bCurrentCornerIsInside=false; CommittedShimmyDir=-1.
+- **Action:** Transition to CornerTransition.
+- **Expected Outcome:** CornerOutsideLeft montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: 4-way corner montage selection.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0589
+- **Name:** CornerInsideRightMontageSelected
+- **Registry String:** `ClimbingSystem.Actions.Corner.InsideRightMontageSelected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P1
+- **System Under Test:** Corner montage selection
+- **Behavior Tested:** CornerInsideRight montage selected when bCurrentCornerIsInside=true and CommittedShimmyDir=+1.
+- **Preconditions:** bCurrentCornerIsInside=true; CommittedShimmyDir=+1.
+- **Action:** Transition to CornerTransition.
+- **Expected Outcome:** CornerInsideRight montage plays.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: 4-way corner montage selection.
+- **Extends:** TC-0588
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0590
+- **Name:** CornerDotProductZeroDeterministic
+- **Registry String:** `ClimbingSystem.Actions.Corner.DotProductZeroDeterministicClassification`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Corner inside/outside classification
+- **Behavior Tested:** Dot product exactly 0 (perpendicular normals) produces deterministic classification.
+- **Preconditions:** CurrentNormal=(1,0,0); NewNormal=(0,1,0); dot=0.
+- **Action:** Classify corner.
+- **Expected Outcome:** Deterministic result (outside per spec: dot <= 0).
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: Dot > 0 = inside; Dot <= 0 = outside.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0591
+- **Name:** CornerTransitionFromBracedShimmying
+- **Registry String:** `ClimbingSystem.Actions.Corner.TransitionFromBracedShimmyingState`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P1
+- **System Under Test:** Corner from braced shimmy
+- **Behavior Tested:** Corner transition valid from BracedShimmying state.
+- **Preconditions:** Character in BracedShimmying; corner detected.
+- **Action:** Trigger corner transition.
+- **Expected Outcome:** State = CornerTransition.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Corner must work from braced shimmy too.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0592
+- **Name:** CornerNullMontageLogsWarningNoCrash
+- **Registry String:** `ClimbingSystem.Actions.Corner.NullMontageLogsWarningNoCrash`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Corner with null montage
+- **Behavior Tested:** Null corner montage logs warning, no crash.
+- **Preconditions:** CornerInsideLeft montage = null.
+- **Action:** Trigger inside-left corner transition.
+- **Expected Outcome:** Warning logged; no crash.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Null montage must not crash.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0593
+- **Name:** CornerPredictiveTraceDistanceRespected
+- **Registry String:** `ClimbingSystem.Actions.Corner.PredictiveTraceDistanceParameterRespected`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Corner predictive trace
+- **Behavior Tested:** Predictive trace distance/radius parameters are respected.
+- **Preconditions:** Corner at distance beyond trace range.
+- **Action:** Shimmy toward corner; verify no detection beyond range.
+- **Expected Outcome:** No corner detected beyond configured trace distance.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Trace parameters must be respected.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0594
+- **Name:** CornerTransitionResetsContinuousShimmyDistance
+- **Registry String:** `ClimbingSystem.Actions.Corner.TransitionResetsContinuousShimmyDistance`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Corner shimmy distance reset
+- **Behavior Tested:** Corner transition resets ContinuousShimmyDistance to 0.
+- **Preconditions:** ContinuousShimmyDistance = 200cm; corner triggered.
+- **Action:** Enter CornerTransition.
+- **Expected Outcome:** ContinuousShimmyDistance == 0.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Distance must reset on corner to prevent immediate reposition after.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0595
+- **Name:** CornerTransitionReplicatedCorrectly
+- **Registry String:** `ClimbingSystem.Multiplayer.Corner.TransitionReplicatedCorrectly`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingMultiplayerExtendedTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** Corner replication
+- **Behavior Tested:** Corner transition state and bCurrentCornerIsInside replicated to proxy.
+- **Preconditions:** Listen server; client enters corner.
+- **Action:** Verify proxy state and corner flag.
+- **Expected Outcome:** Proxy state = CornerTransition; bCurrentCornerIsInside matches.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Proxy must show correct corner animation.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** APPROX
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0596
+- **Name:** BeginPlayNullMotionWarpingLogsWarning
+- **Registry String:** `ClimbingSystem.Lifecycle.BeginPlay.NullMotionWarpingLogsWarning`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::BeginPlay
+- **Behavior Tested:** Null MotionWarpingComponent logs warning but continues initialization.
+- **Preconditions:** Character without MotionWarpingComponent.
+- **Action:** Call BeginPlay.
+- **Expected Outcome:** Warning logged; other init steps complete.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Missing component must not crash BeginPlay.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0597
+- **Name:** BeginPlayRegistersDetectionScanTimer
+- **Registry String:** `ClimbingSystem.Lifecycle.BeginPlay.RegistersDetectionScanTimer`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::BeginPlay
+- **Behavior Tested:** BeginPlay registers detection scan timer at DetectionScanInterval.
+- **Preconditions:** Character spawned.
+- **Action:** Call BeginPlay; verify timer registered.
+- **Expected Outcome:** Timer active at 0.05s interval.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: detection scan timer registered in BeginPlay.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0598
+- **Name:** BeginPlayInitializesStateConfigsTMap
+- **Registry String:** `ClimbingSystem.Lifecycle.BeginPlay.InitializesStateConfigsTMap`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::BeginPlay
+- **Behavior Tested:** BeginPlay initializes StateConfigs TMap with 17 entries.
+- **Preconditions:** Character spawned.
+- **Action:** Call BeginPlay; check StateConfigs.Num().
+- **Expected Outcome:** StateConfigs.Num() == 17.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: StateConfigs must have entry for every EClimbingState.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0599
+- **Name:** DestroyedDuringActiveMontageStopsSafely
+- **Registry String:** `ClimbingSystem.Lifecycle.Destroyed.DuringActiveMontageStopsSafely`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::Destroyed
+- **Behavior Tested:** Destroyed during active montage stops montage safely, no crash.
+- **Preconditions:** Character in ClimbingUp; montage playing.
+- **Action:** Destroy character.
+- **Expected Outcome:** No crash; montage stopped.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Destruction during montage must be safe.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0600
+- **Name:** EndPlayDuringLacheInAirClearsTarget
+- **Registry String:** `ClimbingSystem.Lifecycle.EndPlay.DuringLacheInAirClearsLacheTarget`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::EndPlay
+- **Behavior Tested:** EndPlay during LacheInAir clears LockedLacheTarget and transitions to DroppingDown.
+- **Preconditions:** Character in LacheInAir with active target.
+- **Action:** Call EndPlay.
+- **Expected Outcome:** LockedLacheTarget cleared; state transitions.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: clear LockedLacheTarget in EndPlay; LacheInAir -> DroppingDown.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0601
+- **Name:** EndPlayDuringRagdollRestoresPhysics
+- **Registry String:** `ClimbingSystem.Lifecycle.EndPlay.DuringRagdollRestoresPhysics`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::EndPlay
+- **Behavior Tested:** EndPlay during Ragdoll restores physics (SetSimulatePhysics false).
+- **Preconditions:** Character in Ragdoll; mesh simulating physics.
+- **Action:** Call EndPlay.
+- **Expected Outcome:** Mesh no longer simulating physics.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Spec: if mesh simulating physics -> SetSimulatePhysics(false).
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0602
+- **Name:** EndPlayRemovesFromActiveClimbingCharacters
+- **Registry String:** `ClimbingSystem.Lifecycle.EndPlay.RemovesFromActiveClimbingCharacters`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::EndPlay
+- **Behavior Tested:** EndPlay removes character from ActiveClimbingCharacters (level transition path).
+- **Preconditions:** Character registered in ActiveClimbingCharacters.
+- **Action:** Call EndPlay.
+- **Expected Outcome:** Character not in ActiveClimbingCharacters.
+- **Edge/Failure Condition:** happy path
+- **Why This Matters:** Spec: unregister in both EndPlay and Destroyed.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0603
+- **Name:** DestroyedDuringCornerTransitionSafeExit
+- **Registry String:** `ClimbingSystem.Lifecycle.Destroyed.DuringCornerTransitionSafeExit`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P1
+- **System Under Test:** AClimbingCharacter::Destroyed
+- **Behavior Tested:** Destroyed during CornerTransition committed state exits safely.
+- **Preconditions:** Character in CornerTransition.
+- **Action:** Destroy character.
+- **Expected Outcome:** No crash; cleanup runs.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Committed state destruction must be safe.
+- **Extends:** TC-0599
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0604
+- **Name:** BeginPlayNullMotionWarpingCompletesOtherInit
+- **Registry String:** `ClimbingSystem.Lifecycle.BeginPlay.NullMotionWarpingCompletesOtherInit`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::BeginPlay
+- **Behavior Tested:** Null MotionWarpingComponent does not prevent other init (IK registration, timer, StateConfigs).
+- **Preconditions:** Character without MotionWarpingComponent.
+- **Action:** Call BeginPlay; verify other init completed.
+- **Expected Outcome:** IK registered; timer active; StateConfigs populated.
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** One missing component must not block all init.
+- **Extends:** TC-0596
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0605
+- **Name:** CornerAngleExactly30FromBracedShimmy
+- **Registry String:** `ClimbingSystem.Actions.Corner.AngleExactly30FromBracedShimmyTriggers`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Component
+- **Priority:** P2
+- **System Under Test:** Corner detection from braced shimmy
+- **Behavior Tested:** Angle exactly 30° from BracedShimmying triggers corner transition.
+- **Preconditions:** Character in BracedShimmying; corner at exactly 30°.
+- **Action:** Tick shimmy.
+- **Expected Outcome:** Corner transition triggered.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Boundary test from braced state.
+- **Extends:** TC-0591
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0606
+- **Name:** EndPlayIdempotentDuringLacheInAir
+- **Registry String:** `ClimbingSystem.Lifecycle.EndPlay.IdempotentDuringLacheInAir`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingCharacterWorldTests.cpp`
+- **Type:** World
+- **Priority:** P2
+- **System Under Test:** AClimbingCharacter::EndPlay
+- **Behavior Tested:** Double EndPlay during LacheInAir does not crash.
+- **Preconditions:** Character in LacheInAir.
+- **Action:** Call EndPlay twice.
+- **Expected Outcome:** No crash; second call is no-op.
+- **Edge/Failure Condition:** edge case
+- **Why This Matters:** Double-call safety.
+- **Extends:** TC-0600
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0607
+- **Name:** CornerOutsideLeftNullMontageFallback
+- **Registry String:** `ClimbingSystem.Actions.Corner.OutsideLeftNullMontageReturnsNull`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingShimmyRuntimeTests.cpp`
+- **Type:** Unit
+- **Priority:** P2
+- **System Under Test:** Corner null montage handling
+- **Behavior Tested:** Null CornerOutsideLeft montage returns null from GetMontageForSlot, not wrong montage.
+- **Preconditions:** CornerOutsideLeft = null; other corner montages assigned.
+- **Action:** Call GetMontageForSlot(CornerOutsideLeft).
+- **Expected Outcome:** Returns null (not CornerInsideLeft or other).
+- **Edge/Failure Condition:** failure mode
+- **Why This Matters:** Null must not cross-contaminate slots.
+- **Extends:** TC-0592
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0608
+- **Name:** PerfDetectionHeavyGeometry
+- **Registry String:** `ClimbingSystem.Performance.Detection.HeavyGeometryUnder5ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Detection scan performance
+- **Behavior Tested:** Detection scan with 100+ actors in range completes under 5ms.
+- **Preconditions:** 100 box actors in detection range.
+- **Action:** Run 50 scans; measure median.
+- **Expected Outcome:** Median < 5ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Heavy geometry must not stall detection.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0609
+- **Name:** PerfNetworkRpcThroughput
+- **Registry String:** `ClimbingSystem.Performance.Network.RpcThroughput100GrabsUnder100ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Network RPC throughput
+- **Behavior Tested:** 100 Server_AttemptGrab RPCs processed in < 100ms.
+- **Preconditions:** Server with valid geometry.
+- **Action:** Send 100 RPCs; measure total time.
+- **Expected Outcome:** Total < 100ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** RPC throughput under load.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** APPROX
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0610
+- **Name:** PerfMemoryStabilityRapidCycling
+- **Registry String:** `ClimbingSystem.Performance.Memory.StabilityRapidStateCycling`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Memory allocation stability
+- **Behavior Tested:** No allocation growth over 1000 state cycles.
+- **Preconditions:** Character initialized; baseline memory recorded.
+- **Action:** Cycle None->Hanging->None 1000 times; compare memory.
+- **Expected Outcome:** Memory delta < 1KB.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** State cycling must not leak memory.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0611
+- **Name:** PerfMontageThroughput
+- **Registry String:** `ClimbingSystem.Performance.Animation.MontageThroughput1000PlayStopUnder50ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Montage play/stop throughput
+- **Behavior Tested:** 1000 Montage_Play + Montage_Stop pairs complete in < 50ms.
+- **Preconditions:** Valid montage assigned.
+- **Action:** Play+stop 1000 times; measure total.
+- **Expected Outcome:** Total < 50ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Montage operations must be fast.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0612
+- **Name:** PerfIKFourLimbsSingleCharacter
+- **Registry String:** `ClimbingSystem.Performance.IK.FourLimbsSingleCharUnder0p5ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** IK computation performance
+- **Behavior Tested:** Single character 4-limb IK computation < 0.5ms.
+- **Preconditions:** Character climbing with all 4 limbs active.
+- **Action:** Run 100 IK updates; measure median.
+- **Expected Outcome:** Median < 0.5ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** IK runs every tick; must be fast.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0613
+- **Name:** PerfDetectionMaxGridSize
+- **Registry String:** `ClimbingSystem.Performance.Detection.MaxGridSize10x10Under2ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Grid trace performance
+- **Behavior Tested:** 10x10 grid scan completes under 2ms.
+- **Preconditions:** LedgeGridColumns=10; LedgeGridRows=10.
+- **Action:** Run 50 scans; measure median.
+- **Expected Outcome:** Median < 2ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Max grid size must be performant.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0614
+- **Name:** PerfStateTransitionFullCleanup
+- **Registry String:** `ClimbingSystem.Performance.StateMachine.FullCleanupTransitionUnder0p1ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** State transition with cleanup
+- **Behavior Tested:** State transition with full cleanup (capsule+IMC+SetBase) < 0.1ms.
+- **Preconditions:** Character in Hanging.
+- **Action:** Transition to None 100 times; measure median.
+- **Expected Outcome:** Median < 0.1ms per transition.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Transition cleanup must be fast.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0615
+- **Name:** PerfAnchorFollowing100Ticks
+- **Registry String:** `ClimbingSystem.Performance.Physics.AnchorFollowing100TicksUnder1ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Anchor following performance
+- **Behavior Tested:** 100 ticks with moving anchor < 1ms total.
+- **Preconditions:** Character hanging on moving anchor.
+- **Action:** Tick 100 times; measure total anchor-follow time.
+- **Expected Outcome:** Total < 1ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Anchor following runs every tick.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0616
+- **Name:** PerfAudioDispatch100Sounds
+- **Registry String:** `ClimbingSystem.Performance.Audio.Dispatch100SoundsUnder1ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P3
+- **System Under Test:** Audio dispatch performance
+- **Behavior Tested:** 100 sound dispatches < 1ms total.
+- **Preconditions:** All sounds cached.
+- **Action:** Dispatch 100 sounds; measure total.
+- **Expected Outcome:** Total < 1ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Audio dispatch must not stall.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0617
+- **Name:** StressTenSimultaneousClimbers
+- **Registry String:** `ClimbingSystem.Stress.MultiCharacter.TenClimbersAllSystemsStable`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P1
+- **System Under Test:** Multi-character stability
+- **Behavior Tested:** 10 characters climbing simultaneously; all systems stable for 60 ticks.
+- **Preconditions:** 10 characters spawned and climbing.
+- **Action:** Tick 60 times.
+- **Expected Outcome:** No crash; all characters in valid states; IK budget respected.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Production scenario with many climbers.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0618
+- **Name:** StressRapidShimmyDirectionChanges
+- **Registry String:** `ClimbingSystem.Stress.Shimmy.RapidDirectionChanges100InOneSecond`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Shimmy direction stability
+- **Behavior Tested:** 100 rapid shimmy direction changes in 1s; no state corruption.
+- **Preconditions:** Character shimmying.
+- **Action:** Alternate direction 100 times in 1s.
+- **Expected Outcome:** No crash; CommittedShimmyDir valid; montage not corrupted.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Rapid input must not corrupt state.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0619
+- **Name:** StressRapidLacheLaunchCancel
+- **Registry String:** `ClimbingSystem.Stress.Lache.RapidLaunchCancel10In2Seconds`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Lache launch/cancel stability
+- **Behavior Tested:** 10 Lache launch/cancel cycles in 2s; no arc leak.
+- **Preconditions:** Character hanging with valid target.
+- **Action:** Launch+cancel 10 times.
+- **Expected Outcome:** No crash; no orphaned arc data; state returns to Hanging each time.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Rapid Lache cycling must not leak.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0620
+- **Name:** PerfGetMontageForSlotOverride
+- **Registry String:** `ClimbingSystem.Performance.Animation.GetMontageForSlotOverride10000Under5ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P3
+- **System Under Test:** GetMontageForSlot performance
+- **Behavior Tested:** 10000 GetMontageForSlot calls with override active < 5ms.
+- **Preconditions:** AnimationSetOverride active.
+- **Action:** Call 10000 times; measure total.
+- **Expected Outcome:** Total < 5ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Called frequently during state transitions.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0621
+- **Name:** PerfResolveHitComponentFromNet
+- **Registry String:** `ClimbingSystem.Performance.Multiplayer.ResolveHitComponent100Under10ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P3
+- **System Under Test:** ResolveHitComponentFromNet performance
+- **Behavior Tested:** 100 ResolveHitComponentFromNet calls < 10ms.
+- **Preconditions:** Valid geometry for resolution.
+- **Action:** Call 100 times; measure total.
+- **Expected Outcome:** Total < 10ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Called on every proxy state update.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0622
+- **Name:** PerfValidateOneWayApproach
+- **Registry String:** `ClimbingSystem.Performance.Detection.ValidateOneWay10000Under1ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P3
+- **System Under Test:** ValidateOneWayApproach performance
+- **Behavior Tested:** 10000 ValidateOneWayApproach calls < 1ms.
+- **Preconditions:** Valid normal and approach vectors.
+- **Action:** Call 10000 times; measure total.
+- **Expected Outcome:** Total < 1ms.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Pure math function; must be trivially fast.
+- **Extends:** NONE
+- **Requires World:** NO
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0623
+- **Name:** PerfDetectionHeavyGeometryCorrectness
+- **Registry String:** `ClimbingSystem.Performance.Detection.HeavyGeometryNoFalsePositives`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** Detection correctness under load
+- **Behavior Tested:** Detection under heavy geometry produces no false positives.
+- **Preconditions:** 100 actors; only 1 valid ledge.
+- **Action:** Run detection 50 times.
+- **Expected Outcome:** All 50 results point to the valid ledge; no false positives.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Correctness companion to TC-0608.
+- **Extends:** TC-0608
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0624
+- **Name:** PerfMemoryBaselineStable
+- **Registry String:** `ClimbingSystem.Performance.Memory.BaselineStableAfterWarmup`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P3
+- **System Under Test:** Memory baseline methodology
+- **Behavior Tested:** Memory baseline stable after 10-cycle warmup; no growth in subsequent 100 cycles.
+- **Preconditions:** Character initialized; 10 warmup cycles completed.
+- **Action:** Record baseline; run 100 cycles; compare.
+- **Expected Outcome:** Delta < 1KB.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Validates TC-0610 methodology.
+- **Extends:** TC-0610
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0625
+- **Name:** PerfMultiClimberIKBudgetTen
+- **Registry String:** `ClimbingSystem.Performance.IK.TenCharactersTotalUnder5ms`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Performance
+- **Priority:** P2
+- **System Under Test:** IK budget with 10 characters
+- **Behavior Tested:** 10-character IK total < 5ms (only 4 active per budget).
+- **Preconditions:** 10 characters climbing.
+- **Action:** Run IK update; measure total.
+- **Expected Outcome:** Total < 5ms; exactly 4 with active IK.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Budget enforcement under load.
+- **Extends:** NONE
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0626
+- **Name:** StressLacheArcObjectCountPostCancel
+- **Registry String:** `ClimbingSystem.Stress.Lache.ArcObjectCountZeroAfterCancel`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Lache arc cleanup
+- **Behavior Tested:** After Lache cancel, arc-related object count returns to pre-launch baseline.
+- **Preconditions:** Character hanging; baseline recorded.
+- **Action:** Launch Lache; cancel; check object count.
+- **Expected Outcome:** Object count == baseline.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Arc data must not leak.
+- **Extends:** TC-0619
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+### TC-0627
+- **Name:** StressShimmyDirectionEnumIntegrity
+- **Registry String:** `ClimbingSystem.Stress.Shimmy.DirectionEnumIntegrityAfter100Reversals`
+- **File:** `Source/ClimbingSystem/Tests/ClimbingPerformanceExtendedTests.cpp`
+- **Type:** Integration
+- **Priority:** P2
+- **System Under Test:** Shimmy direction integrity
+- **Behavior Tested:** CommittedShimmyDir is always -1, 0, or +1 after 100 rapid reversals.
+- **Preconditions:** Character shimmying.
+- **Action:** Reverse direction 100 times; check value each time.
+- **Expected Outcome:** Value always in {-1, 0, +1}; never NaN or other.
+- **Edge/Failure Condition:** stress
+- **Why This Matters:** Direction must remain valid enum-like value.
+- **Extends:** TC-0618
+- **Requires World:** YES
+- **Requires Network:** NO
+- **Added In Run:** 4
+- **Notes:** None.
+
+---
+
 ## COVERAGE SUMMARY
 <!-- Updated every run -->
 
 | System | TCs Implemented | TCs Planned | Coverage Est. | Last Updated |
 |--------|----------------|-------------|---------------|--------------|
-| Types/Structs/Enums | 7 | 0 | ~100% | Run 1 |
-| SurfaceData | 2 | 8 | ~70% | Run 2 |
-| Traces | 5 | 1 | ~70% | Run 1 |
-| Detection (Ledge/Mantle/Braced/Wall) | 19 | 25 | ~70% | Run 2 |
-| Priority | 3 | 0 | ~70% | Run 1 |
-| Movement Component | 18 | 8 | ~70% | Run 2 |
-| State Machine / Montage Callbacks | 4 | 14 | ~70% | Run 2 |
-| Actions (Shimmy) | 4 | 8 | ~70% | Run 1 |
-| Actions (ClimbUp) | 5 | 1 | ~70% | Run 1 |
-| Actions (Corner) | 1 | 7 | ~70% | Run 1 |
-| Actions (BracedWall) | 1 | 11 | ~70% | Run 1 |
-| Actions (Lache) | 5 | 2 | ~70% | Run 1 |
-| Actions (Mantle) | 3 | 8 | ~70% | Run 2 |
-| Ladder | 1 | 8 | ~70% | Run 2 |
-| Ragdoll/Physics | 2 | 18 | ~70% | Run 2 |
-| IK System | 3 | 17 | ~70% | Run 2 |
-| Animation (AnimInstance/Set/Notifies) | 11 | 12 | ~70% | Run 2 |
-| Audio | 3 | 7 | ~70% | Run 2 |
-| Camera | 1 | 8 | ~70% | Run 2 |
-| Multiplayer (RPCs/Replication) | 12 | 30 | ~70% | Run 2 |
-| Input (IMC/Handlers) | 6 | 20 | ~70% | Run 2 |
-| Debug Visualization | 0 | 6 | ~30% | Run 1 |
-| Lifecycle (BeginPlay/EndPlay/Destroyed) | 0 | 13 | ~70% | Run 1 |
-| Freefall / Coyote Time | 1 | 8 | ~70% | Run 2 |
-| Integration | 10 | 20 | ~70% | Run 2 |
-| Performance / Stress | 4 | 10 | ~70% | Run 2 |
-| Contracts | 4 | 0 | ~70% | Run 1 |
-| Arc | 3 | 1 | ~70% | Run 1 |
-| Capsule Management | 0 | 4 | ~70% | Run 2 |
-| Warp Targets | 0 | 5 | ~30% | Run 2 |
+| Types/Structs/Enums | 7 | 3 | ~100% | Run 3 |
+| SurfaceData | 2 | 12 | ~100% | Run 3 |
+| Traces | 5 | 2 | ~100% | Run 3 |
+| Detection (Ledge/Mantle/Braced/Wall) | 19 | 35 | ~100% | Run 3 |
+| Priority | 3 | 7 | ~100% | Run 4 |
+| Movement Component | 18 | 14 | ~100% | Run 3 |
+| State Machine / Montage Callbacks | 4 | 21 | ~100% | Run 3 |
+| Actions (Shimmy) | 4 | 18 | ~100% | Run 3 |
+| Actions (ClimbUp) | 5 | 14 | ~100% | Run 4 |
+| Actions (Corner) | 1 | 17 | ~100% | Run 4 |
+| Actions (BracedWall) | 1 | 13 | ~100% | Run 3 |
+| Actions (Lache) | 5 | 10 | ~100% | Run 3 |
+| Actions (Mantle) | 3 | 12 | ~100% | Run 3 |
+| Ladder | 1 | 18 | ~100% | Run 3 |
+| Ragdoll/Physics | 2 | 26 | ~100% | Run 3 |
+| IK System | 3 | 27 | ~100% | Run 3 |
+| Animation (AnimInstance/Set/Notifies) | 11 | 22 | ~100% | Run 3 |
+| Audio | 3 | 10 | ~100% | Run 3 |
+| Camera | 1 | 14 | ~100% | Run 3 |
+| Multiplayer (RPCs/Replication) | 12 | 44 | ~100% | Run 4 |
+| Input (IMC/Handlers) | 6 | 24 | ~100% | Run 3 |
+| Debug Visualization | 0 | 16 | ~100% | Run 3 |
+| Lifecycle (BeginPlay/EndPlay/Destroyed) | 0 | 23 | ~100% | Run 4 |
+| Freefall / Coyote Time | 1 | 11 | ~100% | Run 3 |
+| Integration | 10 | 33 | ~100% | Run 4 |
+| Performance / Stress | 4 | 30 | ~100% | Run 4 |
+| Contracts | 4 | 3 | ~100% | Run 3 |
+| Arc | 3 | 3 | ~100% | Run 3 |
+| Capsule Management | 0 | 6 | ~100% | Run 3 |
+| Warp Targets | 0 | 17 | ~100% | Run 4 |
 
 ---
