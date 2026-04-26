@@ -1,609 +1,645 @@
-# Final Prompt: Generate Comprehensive Test Suite for UE5 Project
+# Revised Prompt: Climbing System Core Mechanics Focus
 
 ```
-Before writing a single line of test code, you MUST complete the following
-reading phase in full. Do not skip or skim any file.
+You are a test case discovery agent for a UE5 Multiplayer Climbing System project.
+Your ONLY job is to discover, describe, and register test cases.
+You MUST NOT write any implementation code (no .cpp, no .h, no C++, no Blueprint).
+You MUST NOT write Build.cs files, shell scripts, or CI configuration.
+You MUST NOT implement any test — only describe what a test should do.
 
 ═══════════════════════════════════════════════════════════════
-## PHASE 0: STATE YOUR ASSUMPTIONS (Output this before anything else)
+## YOUR SINGLE OUTPUT ARTIFACT
 ═══════════════════════════════════════════════════════════════
 
-Before reading any files, output this block — then fill it in after reading:
+You produce exactly one file: TEST_REGISTRY.md
 
-## My Assumptions (fill after Phase 1 reading)
-- UE5 version: [inferred from .uproject or Build.cs files]
-- Project name: [inferred from .uproject]
-- Test module name: [what I will name it and why]
-- Primary game type: [what PROMPT.md says this project is]
-- Systems found in source vs. described in PROMPT.md but missing from source:
-  [list any gaps]
-- APIs I am uncertain about: [list here — do NOT silently guess]
-- Blueprint vs C++ split: [estimate of how much logic is in BP vs C++]
+This file persists across every run of this prompt.
+Every run reads it first, then appends to it.
+The file is the single source of truth for all test cases — planned and implemented.
 
-Do not proceed to Phase 1 until this block is written, even if fields
-must be left as [UNKNOWN — will fill after reading].
+File path: [repo root]/TEST_REGISTRY.md
 
 ═══════════════════════════════════════════════════════════════
-## PHASE 1: MANDATORY READING (Complete ALL before writing any tests)
+## PHASE 0: READ THE REGISTRY FIRST (Mandatory — no exceptions)
 ═══════════════════════════════════════════════════════════════
 
-Read every file listed below in order. Do not skip any.
+Before doing anything else:
+
+1. Read TEST_REGISTRY.md if it exists.
+   - If it does not exist, you will CREATE it from scratch this run.
+   - If it exists, you will APPEND to it. You will NEVER overwrite existing entries.
+
+2. Parse the registry and build an internal map of:
+   - Every test ID already registered (format: TC-NNNN)
+   - Every CLIMBING MECHANIC already covered (see mechanic taxonomy below)
+   - Coverage gaps in core climbing mechanics
+   - The highest TC-NNNN number used (so you can continue the sequence)
+
+3. Output this summary block before doing anything else:
+
+## Registry State (Run N)
+- Registry file found: YES / NO (will be created)
+- Total existing test cases: [N]
+- Highest existing ID: TC-[NNNN] (next will be TC-[NNNN+1])
+- FOCUS NEXT RUN section found: YES / NO
+- Core climbing mechanics with existing coverage: [list]
+- Core climbing mechanics with NO coverage yet: [list]
+- Core climbing mechanics with PARTIAL coverage: [list]
+- Manual QA items already registered: [N]
+- "Do Not Test" items already registered: [list]
+
+Do not proceed until this block is output.
+
+═══════════════════════════════════════════════════════════════
+## CORE CLIMBING MECHANIC TAXONOMY
+═══════════════════════════════════════════════════════════════
+
+This taxonomy defines what "core climbing" means for this project.
+Every run MUST work through this taxonomy and identify gaps.
+This is your primary coverage target — not general engine systems.
+
+### TIER 1 — LEDGE DETECTION (Must reach ~100% coverage before any other tier)
+
+These are the foundation. If ledge detection is wrong, every other
+climbing mechanic is wrong. Treat every item here as P0.
+
+1.1  Ledge Geometry Recognition
+     - Flat top surface detection (walkable angle threshold)
+     - Ledge edge identification (where walkable meets non-walkable)
+     - Ledge height measurement (relative to character hip/chest/full reach)
+     - Ledge depth measurement (thin ledge vs. full platform)
+     - Curved ledge detection (cylinder columns, curved walls)
+     - Angled ledge surfaces (non-horizontal tops — should fail or succeed?)
+     - Ledge width measurement (too narrow to grab vs. grabbable)
+     - Dynamic ledge detection (moving platforms, rotating objects)
+     - Destructible ledge detection (ledge breaks while grabbed)
+
+1.2  Trace Accuracy
+     - Forward trace hits ledge lip correctly at full reach distance
+     - Forward trace misses ledge correctly when out of range
+     - Downward trace finds top surface correctly
+     - Trace result stability (same ledge, same result across multiple frames)
+     - Trace result when character is moving toward ledge
+     - Trace result when ledge is partially occluded by another object
+     - Trace result at extreme character orientations (slope, uneven ground)
+     - Multiple overlapping ledges at different heights — correct one selected
+     - Trace behavior at world boundary / map edge ledges
+     - Trace ignores non-climbable surfaces (tagged NoClimb, glass, water)
+
+1.3  Ledge Validity Rules
+     - Minimum height above ground to be a valid grab target
+     - Maximum height above character reach to reject grab
+     - Ledge tagged as NoClimb is correctly rejected
+     - Ledge too narrow (below minimum width threshold) is rejected
+     - Ledge with obstruction above (ceiling too low) is rejected
+     - Ledge with obstruction directly in front (wall blocks mount) is rejected
+     - Valid ledge remains valid across multiple consecutive frames
+     - Valid ledge becomes invalid when geometry changes (moved/destroyed)
+     - Ledge validity check is deterministic (same input = same result always)
+
+1.4  Grab Initiation
+     - Grab triggers at correct approach distance
+     - Grab triggers at correct approach angle (head-on vs. oblique)
+     - Grab does NOT trigger when approaching too fast (momentum cutoff)
+     - Grab does NOT trigger when player is falling away from ledge
+     - Grab does NOT trigger when player is already grabbing another ledge
+     - Grab does NOT trigger when player is in a state that forbids it
+     - Grab triggers correctly from a running jump
+     - Grab triggers correctly from a standing jump
+     - Grab triggers correctly when falling past a ledge (catch)
+     - Grab position snaps character hands to correct world position
+
+### TIER 2 — HANGING & BRACED WALL STATE (Reach ~90% before moving to Tier 3)
+
+The state the character is in while holding a ledge or pressed against a wall.
+
+2.1  Hang State Entry
+     - Character enters hang state immediately on successful grab
+     - Character position offsets correctly relative to ledge (not clipping)
+     - Character rotation aligns to ledge face correctly
+     - Character velocity zeroed on grab (no carry-through momentum)
+     - Gravity correctly suspended in hang state
+     - Collision capsule adjusts correctly in hang state
+
+2.2  Hang State Maintenance
+     - Character holds position without drifting over time
+     - Character holds position while ledge is stationary
+     - Character moves with ledge when ledge is a moving platform
+     - Hang state persists correctly across network tick boundaries
+     - Hang stamina drains at correct rate (if stamina system exists)
+     - Hang stamina exhaustion triggers fall correctly
+     - Character can hang indefinitely if no stamina system
+
+2.3  Braced Wall State
+     - Character presses flat against wall correctly
+     - Brace position offset from wall is correct (not clipping, not floating)
+     - Brace rotation aligns to wall normal correctly
+     - Braced state entered from hang correctly
+     - Braced state entered from shimmy at corner correctly
+     - Wall too thin rejects brace entry
+     - Wall angle too extreme rejects brace entry
+
+### TIER 3 — SHIMMYING (Reach ~90% before moving to Tier 4)
+
+Lateral movement while hanging on a ledge or braced against a wall.
+
+3.1  Basic Shimmy Movement
+     - Shimmy left moves character left along ledge at correct speed
+     - Shimmy right moves character right along ledge at correct speed
+     - Shimmy speed is consistent (not faster/slower mid-shimmy)
+     - Shimmy animation matches movement direction (no foot sliding)
+     - Character hands stay on ledge surface during shimmy (no floating)
+     - Character body stays against wall/ledge during shimmy (no gap)
+     - Shimmy stops at ledge end (left boundary)
+     - Shimmy stops at ledge end (right boundary)
+     - Shimmy blocked by obstacle on ledge (pillar, object mid-ledge)
+     - Shimmy speed correctly different from climb speed
+
+3.2  Shimmy Boundary Behavior
+     - At left ledge end: character stops cleanly (no jitter, no clipping)
+     - At right ledge end: character stops cleanly
+     - At ledge end with open space beyond: corner turn available
+     - At ledge end with wall beyond: movement blocked
+     - Shimmy up slope (ledge rises left-to-right): character rises correctly
+     - Shimmy down slope (ledge falls left-to-right): character descends
+     - Shimmy onto adjacent ledge at same height (gap jump or direct connect)
+
+3.3  Corner Transitions
+     - Outer corner (convex): character wraps around outside of corner
+     - Inner corner (concave): character transitions to inside wall face
+     - Corner angle 90 degrees: transitions correctly
+     - Corner angle less than 90 degrees (sharp): handled correctly or blocked
+     - Corner angle greater than 90 degrees (obtuse): handled correctly
+     - Corner transition maintains hand contact throughout
+     - Corner transition does not teleport character (smooth motion)
+     - Corner transition speed matches shimmy speed (no snap)
+     - Two consecutive corners in same direction work correctly
+     - Corner transition interrupted mid-way (input released): handled correctly
+
+3.4  Shimmy Special Cases
+     - Shimmy while ledge is moving (moving platform)
+     - Shimmy onto a ledge section that becomes invalid mid-shimmy
+     - Shimmy with another player already occupying the target position
+     - Shimmy input held continuously vs. tapped (same result or different?)
+     - Shimmy at max speed does not cause character to skip past boundary
+
+### TIER 4 — CLIMBING UP / VAULTING / MANTLING (Reach ~85% before Tier 5)
+
+Transitioning from hanging to standing on top of the ledge.
+
+4.1  Climb Up Initiation
+     - Climb up triggers on correct input
+     - Climb up rejected if not enough clearance above ledge (ceiling too low)
+     - Climb up rejected if top surface is not walkable (too steep)
+     - Climb up rejected if top surface is occupied by another player
+     - Climb up initiates from any shimmy position (not just center)
+     - Climb up initiates from braced wall state correctly
+
+4.2  Climb Up Motion
+     - Character trajectory follows correct arc over ledge
+     - Character does not clip into ledge geometry during climb up
+     - Character does not clip into ceiling during climb up
+     - Character lands on top surface at correct position (not over edge)
+     - Character facing direction after climb up matches ledge facing
+     - Climb up motion is not interruptible mid-way (or correctly interruptible)
+     - Climb up completes even if player releases input mid-animation
+
+4.3  Mantle (Low Obstacle Vault)
+     - Mantle triggers for obstacles at correct height range (different from climb up)
+     - Mantle does NOT trigger for obstacles outside height range
+     - Mantle trajectory clears obstacle without clipping
+     - Mantle landing position is correct (past the obstacle, not on top)
+     - Mantle works while running (no need to slow down)
+     - Mantle works from standing still
+     - Mantle works at wall run speeds (if wall run exists)
+
+4.4  Climb Up / Mantle Edge Cases
+     - Ledge destroyed mid-climb-up: character falls or completes?
+     - Moving ledge: climb up completes to correct position on moving surface
+     - Slope on top surface: character adjusts foot placement correctly
+     - Two players climb up same ledge simultaneously: no overlap
+
+### TIER 5 — JUMPING FROM LEDGE / LACHE (Reach ~85% before Tier 6)
+
+Launching from a hanging or braced position.
+
+5.1  Jump From Hang (Basic)
+     - Jump up from hang launches character vertically at correct velocity
+     - Jump back from hang launches character away from wall at correct velocity
+     - Jump direction matches input direction (8-directional or analog)
+     - Jump velocity correct magnitude (reaches intended height/distance)
+     - Jump cancels hang state correctly (no residual hang state)
+     - Jump correctly resets to freefall/normal movement state
+     - Cannot jump if stamina exhausted (if stamina system exists)
+
+5.2  Lache (Swing and Release)
+     - Lache input triggers correctly while hanging
+     - Lache launch velocity is higher than basic jump (correct multiplier)
+     - Lache direction determined by input at moment of release
+     - Lache with no input: launches forward (away from wall)
+     - Lache arc is correct (reaches target ledge at intended distance)
+     - Lache miss (no ledge to grab): transitions to freefall correctly
+     - Lache catch (another ledge in range): auto-grabs or requires input?
+     - Lache canceled mid-way: handled correctly or not interruptible?
+     - Lache distance scales with hang momentum (if momentum preserved)
+     - Lache works from shimmy position (not just center of ledge)
+
+5.3  Directed Jumps and Precision
+     - Diagonal jump from ledge (forward-left, forward-right, etc.)
+     - Jump from ledge to adjacent ledge at same height
+     - Jump from ledge to ledge slightly above (requires correct arc)
+     - Jump from ledge to ledge slightly below
+     - Jump gap too large: character fails to reach, falls correctly
+     - Jump gap exactly at edge of reach: character barely grabs or misses
+     - Jump onto a moving platform from ledge
+
+5.4  Jump Edge Cases
+     - Jump input on exact frame of ledge becoming invalid: handled correctly
+     - Jump while ledge is moving: launch velocity accounts for ledge velocity?
+     - Two players jump from same ledge simultaneously: no interaction issues
+     - Jump from ledge near ceiling: arc clips ceiling, falls correctly
+
+### TIER 6 — FALLING & RECOVERY (Reach ~80% before secondary systems)
+
+What happens when the character falls from a climbing state.
+
+6.1  Fall Initiation
+     - Fall from hang (no input, stamina depleted): correct
+     - Fall from shimmy (ledge end reached, no corner): correct
+     - Fall from grab failure (grabbed but physics rejected): correct
+     - Fall while climbing up (ledge destroyed): correct
+     - Forced fall (damage, stagger, knockback while hanging): correct
+
+6.2  Fall Behavior
+     - Freefall velocity after release matches physics (no float, no snap)
+     - Fall from hang height correctly triggers fall damage at threshold
+     - Fall from hang height below threshold: no damage
+     - Fall from great height: death or max damage cap applied
+     - Fall onto slope: character slides or stops based on slope angle
+     - Fall into water (if water exists): correct transition
+
+6.3  Recovery and Re-Grab
+     - Falling past another ledge: auto-grab triggers if close enough
+     - Falling past another ledge: auto-grab does NOT trigger if too fast
+     - Manual grab attempt while falling: succeeds within timing window
+     - Manual grab attempt while falling: fails outside timing window
+     - Re-grab same ledge after falling off: allowed (no cooldown) or blocked?
+     - Respawn position after fatal fall: correct checkpoint or spawn point
+
+### TIER 7 — LADDER CLIMBING (Reach ~80% — separate from ledge system)
+
+7.1  Ladder Detection and Entry
+     - Ladder detected at correct approach distance
+     - Ladder detected at correct approach angle
+     - Ladder entry from bottom: character aligns correctly
+     - Ladder entry from top (step onto): character aligns correctly
+     - Ladder entry while jumping toward it: grab triggered correctly
+     - Non-climbable prop tagged as ladder incorrectly: rejected
+
+7.2  Ladder Movement
+     - Climb up ladder at correct speed
+     - Climb down ladder at correct speed
+     - Stop at top of ladder: character exits to standing or hangs at top
+     - Stop at bottom of ladder: character exits to standing or drops off
+     - Lateral input on ladder: ignored or causes shimmy if ladder wide enough
+     - Jump off ladder: character launches in input direction
+     - Fall off ladder (no input, stamina): character drops
+
+7.3  Ladder Edge Cases
+     - Moving ladder (elevator shaft, vehicle): character moves with ladder
+     - Rotating ladder: character stays aligned
+     - Two players on same ladder: no collision issues (or correct blocking)
+     - Ladder destroyed while character on it: fall triggered correctly
+
+═══════════════════════════════════════════════════════════════
+## PHASE 1: READ PROJECT FILES (Mandatory)
+═══════════════════════════════════════════════════════════════
+
+Read in order. Do not skip.
 
 ### Step 1.1 — Read PROMPT.md
-This is the original kickstart prompt that defines what this project is,
-its goals, its systems, and its intended behavior. It is your north star.
-After reading, write a 2-sentence summary:
-  "This project is: ..."
-  "The core systems are: ..."
-If you cannot write those 2 sentences, stop and say so — do not proceed.
+Output 2 sentences:
+"This project is: ..."
+"The core climbing mechanics implemented are: ..."
+
+If PROMPT.md describes climbing mechanics not in the taxonomy above,
+ADD them to the taxonomy before proceeding. The taxonomy is not
+exhaustive — it is a minimum baseline.
 
 ### Step 1.2 — Read all .github/ files
-Read every file in the .github/ directory:
-- .github/copilot-instructions.md (if present)
-- .github/instructions/ (all files, if present)
-- .github/prompts/ (all files, if present)
-- .github/workflows/ (all .yml files — note what CI already runs)
-
-After reading, list:
-- Coding conventions enforced by instruction files
-- What the CI pipeline already validates
-- Any test-related workflows already defined
+Note any climbing-mechanic-specific conventions (e.g., trace channel
+names, surface tag names, state names) that will affect test descriptions.
 
 ### Step 1.3 — Read all root-level documentation
-Read every .md, .txt, CONTRIBUTING, and CONVENTIONS file in the root
-directory. Note any architectural decisions, naming rules, or system
-descriptions that will affect test design.
+Note any design decisions that affect climbing behavior:
+- Is there a stamina system?
+- Is there auto-grab or manual-grab only?
+- What are the exact ledge height thresholds?
+- What surfaces are climbable vs. not?
+- Is there a momentum system?
+- Is there co-op interaction on ledges?
+Record these as DESIGN FACTS. Every TC that references a numeric
+value (speed, height, distance) MUST cite a DESIGN FACT as its source.
+Never invent a number.
 
-### Step 1.4 — Scan for ALL existing tests
-Search the entire repository for:
-- Files matching: *Test*.cpp, *Test*.h, *Spec.cpp, *Tests.cpp
-- Directories named: Tests/, Testing/, Specs/
-- Gauntlet scripts (*.gauntlet.cs or Gauntlet/ folders)
-- Python or shell scripts that run any form of validation
+### Step 1.4 — Scan Source/ for all climbing-related systems
+List every .cpp and .h file related to:
+- Ledge detection / trace systems
+- Climbing state machine
+- Movement component modifications
+- IK (hands/feet placement on surfaces)
+- Animation state (climbing anims)
+- Physics interactions during climb
+- Input handling for climb actions
+- Network replication of climb state
 
-Output a complete list:
-## Existing Tests Found
-- [filepath]: [brief description of what it tests]
-- [filepath]: [brief description of what it tests]
-## NO existing tests will be recreated. This list is final.
+Group by the taxonomy tier above. This is your coverage map.
 
-### Step 1.5 — Scan Source/ for all systems
-List every .cpp and .h file found in Source/. Group by subsystem/folder.
-This becomes your test coverage map in Phase 2.
-
-═══════════════════════════════════════════════════════════════
-## PHASE 2: GAP ANALYSIS REPORT (Output this before any test code)
-═══════════════════════════════════════════════════════════════
-
-Produce the gap analysis first. No test code until this is complete.
-
-For every system found in Step 1.5 and every system described in PROMPT.md,
-output one row:
-
-## Gap Analysis
-
-| System | Source File(s) | In PROMPT.md | Test Status | Priority |
-|--------|---------------|--------------|-------------|----------|
-| [name] | [path]        | ✅ / ❌       | ✅ Tested / ❌ Untested / ⚠️ Partial / 🔵 Blueprint-only | P1/P2/P3 |
-
-Priority definitions:
-- P1: Critical gameplay path (as described in PROMPT.md)
-- P2: Core systems (supporting the critical path)
-- P3: Secondary systems, polish, edge features
-
-Blueprint-only systems:
-- Mark as 🔵 BLUEPRINT — do NOT write automated tests for these
-- Instead write: // MANUAL QA REQUIRED: [describe what a tester should verify]
-- Flag any C++ interfaces that Blueprint calls into — those ARE testable
-
-If the project has more than 20 systems:
-- Generate complete tests for the top 10 by priority
-- For the remainder, output test stubs with TODO comments
-- State clearly at the end: "Deferred systems: [list] — reason: token/scope limit"
+### Step 1.5 — Read FOCUS NEXT RUN section (if present)
+If TEST_REGISTRY.md has a FOCUS NEXT RUN section, treat those items
+as P0 — higher than all other priorities this run.
+After processing them, mark them done in the Run History.
 
 ═══════════════════════════════════════════════════════════════
-## PHASE 3: TEST SUITE GENERATION
+## PHASE 2: CONFLICT & DUPLICATION CHECK
 ═══════════════════════════════════════════════════════════════
 
-Now generate tests. Produce exactly ONE file at a time.
-After each file output:
-  --- FILE COMPLETE: [filename] ---
-  NEXT: [next filename]
+A test is a DUPLICATE if it covers:
+- Same taxonomy item (e.g., 3.2 "At left ledge end: character stops cleanly")
+- Same condition variant (happy path / edge / failure / stress)
+- Same system under test
 
-If the project has more than 5 test files, pause after each file
-and wait for "continue" before producing the next.
+Near-duplicates (same item, different condition) ARE allowed.
+Always note which taxonomy item a TC covers using the taxonomy ID
+(e.g., "Covers: 3.2 — Shimmy left boundary").
 
----
+If you detect a conflict:
+## CONFLICT DETECTED
+- Proposed: [description]
+- Conflicts with: TC-[NNNN] — [name]
+- Taxonomy item: [e.g., 3.2]
+- Reason: [why they are the same]
+- Action: SKIPPED
 
-### CRITICAL: API Accuracy Requirement
+If near-duplicate:
+## NEAR-DUPLICATE (Extension Allowed)
+- Proposed: TC-[new ID]
+- Extends: TC-[NNNN]
+- Taxonomy item: [e.g., 3.2]
+- Difference: [different condition, input variant, or failure mode]
+- Action: REGISTERED
 
-UE5's automation API has specific macros and method signatures.
-If you are not 100% certain a macro or method exists exactly as written:
-1. Write a comment: // VERIFY: confirm this API exists in UE5.[version]
-2. List it in your Assumptions block as "uncertain API"
-3. Never silently invent a method name that sounds plausible
+═══════════════════════════════════════════════════════════════
+## PHASE 3: GAP ANALYSIS
+═══════════════════════════════════════════════════════════════
 
-The following are CONFIRMED valid in UE5.3+. Use only these unless
-you find others confirmed in Epic's documentation:
+For each taxonomy tier and item, output:
 
-  Macros:
-  - IMPLEMENT_SIMPLE_AUTOMATION_TEST(TClass, PrettyName, TFlags)
-  - IMPLEMENT_COMPLEX_AUTOMATION_TEST(TClass, PrettyName, TFlags)
-  - DEFINE_LATENT_AUTOMATION_COMMAND(CommandName)
-  - DEFINE_LATENT_AUTOMATION_COMMAND_ONE_PARAMETER(CommandName, ParamType, ParamName)
-  - ADD_LATENT_AUTOMATION_COMMAND(CommandInstance)
+## Climbing Mechanic Coverage
 
-  Assertion methods (called as this->TestX(...) inside RunTest()):
-  - TestEqual(What, Actual, Expected)
-  - TestNotEqual(What, Actual, Expected)
-  - TestTrue(What, bValue)
-  - TestFalse(What, bValue)
-  - TestNotNull(What, Pointer)
-  - TestNull(What, Pointer)
-  - TestValid(What, WeakPtr)
-  - AddError(Message) — for custom failure messages
+| Taxonomy ID | Mechanic | Existing TCs | Coverage Est. | Priority | This Run? |
+|-------------|----------|--------------|---------------|----------|-----------|
+| 1.1 | Ledge Geometry Recognition | TC-XXXX, ... | 0%/~30%/~70%/~100% | P0 | YES/NO |
+| 1.2 | Trace Accuracy | ... | ... | P0 | YES/NO |
+[continue for every taxonomy item]
 
-  World creation (confirmed pattern — see template below):
-  - UWorld::CreateWorld(EWorldType::Game, false)
-  - GEngine->CreateNewWorldContext(EWorldType::Game)
-  - World->InitializeActorsForPlay(FURL())
-  - World->BeginPlay()
-  - GEngine->DestroyWorldContext(World)
-  - World->DestroyWorld(false)
+Coverage definitions:
+- 0%: Nothing tested
+- ~30%: Happy path only (grab works when it should)
+- ~70%: Happy path + main failure cases (grab blocked when it should be)
+- ~100%: Happy path + failures + edge cases + boundary conditions + at least one stress test
 
-  Object creation:
-  - NewObject<T>() — for UObjects not requiring a world
-  - World->SpawnActor<T>() — for Actors requiring a world
+After the table:
+## This Run's Focus
+Priority order this run (P0 items first, then lowest coverage):
+1. [Taxonomy ID + item name] — [current coverage]% — [N] new TCs planned
+2. ...
 
-  Do NOT invent:
-  - TestWorld::CreateTestActor() ← does not exist
-  - FAutomationTestWorld ← does not exist
-  - UTestHelper::Spawn() ← does not exist
-  - Any method not in the confirmed list above without a // VERIFY comment
+Rule: Do not move to a lower tier until the higher tier reaches ~70%.
+Example: Do not add Tier 3 (Shimmy) tests if Tier 1 (Ledge Detection)
+is still below ~70%.
 
----
+Exception: If FOCUS NEXT RUN explicitly names a lower-tier item, do it
+regardless of tier order.
 
-### Canonical World Setup Template
+═══════════════════════════════════════════════════════════════
+## PHASE 4: NEW TEST CASE PROPOSALS
+═══════════════════════════════════════════════════════════════
 
-Every test that requires a UWorld MUST use this pattern exactly.
-Do not invent alternatives.
+For each gap, propose new test cases.
+Work in taxonomy order within each tier.
+Do NOT write any code. Only write registry entries.
 
-```cpp
-// SharedTestHelpers.h — include this in any world-dependent test
+For every numeric value in a TC (speed, distance, height, angle):
+- Cite the source: (DESIGN FACT: [name]) or (SOURCE: [filename:line])
+- If the value is unknown, write: VALUE UNKNOWN — implementer must
+  verify against [specific file or PROMPT.md section]
+- NEVER invent a number
 
-#pragma once
-#include "CoreMinimal.h"
-#include "Engine/World.h"
-#include "Engine/Engine.h"
+═══════════════════════════════════════════════════════════════
+## TEST_REGISTRY.md FORMAT SPECIFICATION
+═══════════════════════════════════════════════════════════════
 
-struct FTestWorldHelper
-{
-    UWorld* World = nullptr;
-
-    void Setup()
-    {
-        World = UWorld::CreateWorld(EWorldType::Game, false);
-        FWorldContext& WorldContext =
-            GEngine->CreateNewWorldContext(EWorldType::Game);
-        WorldContext.SetCurrentWorld(World);
-        FURL URL;
-        World->InitializeActorsForPlay(URL);
-        World->BeginPlay();
-    }
-
-    void Teardown()
-    {
-        if (World)
-        {
-            World->BeginTearingDown();
-            GEngine->DestroyWorldContext(World);
-            World->DestroyWorld(false);
-            World = nullptr;
-        }
-    }
-};
-```
-
-Every test using FTestWorldHelper MUST call Teardown() before returning,
-including early returns on test failure.
-Pattern:
-```cpp
-bool FMyWorldTest::RunTest(const FString& Parameters)
-{
-    FTestWorldHelper Helper;
-    Helper.Setup();
-
-    // ... test code ...
-
-    Helper.Teardown(); // MUST be called before every return path
-    return true;
-}
-```
+# TEST_REGISTRY.md
+# UE5 Multiplayer Climbing System — Test Case Registry
+# Last updated: [ISO 8601 date]
+# Total: [N] | Implemented: [N] | Planned: [N] | Manual QA: [N]
 
 ---
 
-### Memory and Cleanup Requirements
-
-Every test must clean up what it creates:
-
-| Created With          | Must Be Cleaned Up With                        |
-|-----------------------|------------------------------------------------|
-| UWorld::CreateWorld() | World->DestroyWorld() + GEngine->DestroyWorldContext() |
-| World->SpawnActor<>() | Actor->Destroy() OR world teardown handles it  |
-| NewObject<>()         | Obj->ConditionalBeginDestroy() if not in world |
-| Static state used     | // STATIC-SAFE: [explain why this is safe]     |
-
-Failure to clean up UWorlds causes flaky CI failures. Every world-dependent
-test file must have a comment at the top:
-// WORLD CLEANUP: verified — all paths call Helper.Teardown()
+## RUN HISTORY
+| Run # | Date | New TCs | Focus Tiers | Taxonomy Coverage | Notes |
+|-------|------|---------|-------------|-------------------|-------|
+| 1 | [date] | [N] | Tier 1, 2 | 1.1:30%, 1.2:0%... | [notes] |
 
 ---
 
-### Test File Structure
-
-Mirror the source directory structure exactly:
-
-```
-Source/
-  [ProjectName]/
-    Tests/
-      Helpers/
-        SharedTestHelpers.h        ← FTestWorldHelper + common utilities
-      Systems/
-        [SystemName]Tests.cpp      ← mirrors Source/[ProjectName]/Systems/
-      Components/
-        [ComponentName]Tests.cpp   ← mirrors Source/[ProjectName]/Components/
-      GameModes/
-        [GameMode]Tests.cpp
-      AI/
-        [AISystem]Tests.cpp
-      UI/
-        [Widget]Tests.cpp
-      Integration/
-        [Feature]IntegrationTests.cpp
-      Performance/
-        [System]PerfTests.cpp
-```
+## DESIGN FACTS
+<!-- Populated from PROMPT.md and source files. Every TC numeric value cites one of these. -->
+<!-- Never add a fact without a source. -->
+| Fact ID | Description | Value | Source |
+|---------|-------------|-------|--------|
+| DF-001 | Maximum ledge grab height above character | [value] | [PROMPT.md / SourceFile.cpp:line] |
+| DF-002 | Minimum ledge width to allow grab | [value] | [...] |
+| DF-003 | Shimmy movement speed | [value] | [...] |
+| DF-004 | Lache launch velocity multiplier | [value] | [...] |
+| DF-005 | Auto-grab trigger distance while falling | [value] | [...] |
+| DF-006 | Hang stamina drain rate | [value] | [...] |
+| DF-007 | Fall damage threshold height | [value] | [...] |
+| DF-008 | Ladder climb speed | [value] | [...] |
+[add more as discovered]
 
 ---
 
-### Test Naming — Registry Name Format
-
-The string passed to IMPLEMENT_SIMPLE_AUTOMATION_TEST is the name that appears
-in Session Frontend and CI output. Format it precisely:
-
-```
-"[ProjectName].[System].[Subsystem].[WhatIsTested]"
-```
-
-Examples:
-```cpp
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FInventoryStackLimitTest,
-    "MyGame.Inventory.Stacking.AddBeyondLimitClampsToMax",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::ProductFilter
-)
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FAIPerceptionChaseTransitionTest,
-    "MyGame.AI.Perception.PlayerVisibleTransitionsToChaseState",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::ProductFilter
-)
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FCombatArmorMitigationTest,
-    "MyGame.Combat.DamageCalculation.ArmorMitigationReducesDamageCorrectly",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::ProductFilter
-)
-```
-
-Rules:
-- No spaces in any segment
-- Use PascalCase within each segment
-- The class name (first arg) must be unique across the entire project
-- The registry name (second arg) must be unique across the entire project
+## TAXONOMY COVERAGE SNAPSHOT
+<!-- Updated every run. Quick reference for gap analysis. -->
+| Taxonomy ID | Mechanic | Coverage Est. | TC Count | Last Updated |
+|-------------|----------|---------------|----------|--------------|
+| 1.1 | Ledge Geometry Recognition | 0% | 0 | Run 0 |
+| 1.2 | Trace Accuracy | 0% | 0 | Run 0 |
+| 1.3 | Ledge Validity Rules | 0% | 0 | Run 0 |
+| 1.4 | Grab Initiation | 0% | 0 | Run 0 |
+| 2.1 | Hang State Entry | 0% | 0 | Run 0 |
+| 2.2 | Hang State Maintenance | 0% | 0 | Run 0 |
+| 2.3 | Braced Wall State | 0% | 0 | Run 0 |
+| 3.1 | Basic Shimmy Movement | 0% | 0 | Run 0 |
+| 3.2 | Shimmy Boundary Behavior | 0% | 0 | Run 0 |
+| 3.3 | Corner Transitions | 0% | 0 | Run 0 |
+| 3.4 | Shimmy Special Cases | 0% | 0 | Run 0 |
+| 4.1 | Climb Up Initiation | 0% | 0 | Run 0 |
+| 4.2 | Climb Up Motion | 0% | 0 | Run 0 |
+| 4.3 | Mantle | 0% | 0 | Run 0 |
+| 4.4 | Climb Up Edge Cases | 0% | 0 | Run 0 |
+| 5.1 | Jump From Hang | 0% | 0 | Run 0 |
+| 5.2 | Lache | 0% | 0 | Run 0 |
+| 5.3 | Directed Jumps | 0% | 0 | Run 0 |
+| 5.4 | Jump Edge Cases | 0% | 0 | Run 0 |
+| 6.1 | Fall Initiation | 0% | 0 | Run 0 |
+| 6.2 | Fall Behavior | 0% | 0 | Run 0 |
+| 6.3 | Recovery and Re-Grab | 0% | 0 | Run 0 |
+| 7.1 | Ladder Detection and Entry | 0% | 0 | Run 0 |
+| 7.2 | Ladder Movement | 0% | 0 | Run 0 |
+| 7.3 | Ladder Edge Cases | 0% | 0 | Run 0 |
 
 ---
 
-### Required Test Categories
-
-Generate tests for every untested system from the gap analysis.
-Work through categories in priority order (P1 → P2 → P3).
-
-#### CATEGORY 1: Unit Tests — Pure Logic (No World required)
-
-For every system/utility class identified:
-- All pure functions and static methods
-- Math and formula correctness (especially formulas mentioned in PROMPT.md)
-- State machine transitions
-- Data validation and parsing
-- Configuration and default values
-- Game balance calculations
-
-Template:
-```cpp
-// WHAT: [one sentence — what behavior is being tested]
-// WHY: [why this matters to the game — reference PROMPT.md if applicable]
-// EDGE CASES: [what edge cases this covers]
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    F[System][Behavior]Test,
-    "[ProjectName].[System].[Subsystem].[Behavior]",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::ProductFilter
-)
-
-bool F[System][Behavior]Test::RunTest(const FString& Parameters)
-{
-    // Arrange
-    // ...
-
-    // Act
-    // ...
-
-    // Assert — every TestEqual must have a meaningful first argument
-    TestEqual(
-        TEXT("[System]: [what this value represents] should be [expected]"),
-        ActualValue,
-        ExpectedValue
-    );
-
-    return true;
-}
-```
-
-#### CATEGORY 2: Component Tests
-
-For every UActorComponent subclass:
-- Default values on construction (use NewObject<>(), no world needed)
-- Behavior when all dependencies are valid
-- Graceful degradation when dependencies are null or invalid
-- All public methods
-- Delegate/event firing conditions
-
-#### CATEGORY 3: Gameplay Tests — Requires World
-
-Use FTestWorldHelper for all of these.
-- Actor spawning and initialization
-- Player controller and pawn setup
-- Game mode rule enforcement
-- Win/lose condition logic
-- Respawn and checkpoint behavior
-- Any core loop mechanic described in PROMPT.md
-
-#### CATEGORY 4: Networking Tests (only if multiplayer exists per PROMPT.md)
-
-Note: True replication tests require a multi-process setup.
-For single-process tests:
-- Authority checks (HasAuthority() gating)
-- RPC function signatures exist and are callable
-- Mark as // NETWORK: single-process approximation — full replication
-  requires PIE multi-player session
-
-#### CATEGORY 5: Performance Tests
-
-Use only these confirmed timing methods:
-
-```cpp
-// WHAT: Measures [hot path] performance under [N] iterations
-// THRESHOLD: [value]ms — justify: [from PROMPT.md spec / industry baseline / measured baseline]
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    F[System]PerformanceTest,
-    "[ProjectName].Performance.[System].[WhatIsMeasured]",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::PerformanceFilter  // Note: PerformanceFilter, not ProductFilter
-)
-
-bool F[System]PerformanceTest::RunTest(const FString& Parameters)
-{
-    const int32 Iterations = 1000;
-    // THRESHOLD: justify this value with a comment
-    const double MaxMedianMs = 1.0;
-
-    TArray<double> Timings;
-    Timings.Reserve(Iterations);
-
-    for (int32 i = 0; i < Iterations; ++i)
-    {
-        double Start = FPlatformTime::Seconds();
-        // ... hot path code ...
-        double End = FPlatformTime::Seconds();
-        Timings.Add((End - Start) * 1000.0); // convert to ms
-    }
-
-    Timings.Sort();
-    double MedianMs = Timings[Iterations / 2];
-
-    TestTrue(
-        FString::Printf(TEXT("[System]: median time %.4fms should be < %.1fms"),
-            MedianMs, MaxMedianMs),
-        MedianMs < MaxMedianMs
-    );
-
-    return true;
-}
-```
-
-All thresholds must have a comment:
-// THRESHOLD: [value] — source: [PROMPT.md spec / measured baseline / industry standard]
-Never invent a threshold without justification.
-
-#### CATEGORY 6: Integration Tests — Full Feature Flows
-
-For each major user-facing feature described in PROMPT.md, write one
-end-to-end test that exercises the complete flow.
-
-Structure each integration test as:
-```
-// FLOW: [describe the sequence in plain English]
-// Step 1: [setup]
-// Step 2: [action]
-// Step 3: [verify intermediate state]
-// Step 4: [action]
-// Step 5: [verify final state]
-```
-
-These will use FTestWorldHelper and will be the longest tests in the suite.
-They live in Tests/Integration/[FeatureName]IntegrationTests.cpp.
+## DO NOT TEST — OUT OF SCOPE
+| Item | Reason |
+|------|--------|
+| Engine physics solver | Not owned by project |
+| UE5 network transport layer | Engine responsibility |
+| Third-party plugin internals | Not owned by project |
 
 ---
 
-### Assertion Quality Standard
-
-Every assertion must be self-explanatory when it fails in CI output:
-
-```cpp
-// ✅ GOOD — tells you exactly what failed and what was expected
-TestEqual(
-    TEXT("Inventory: adding 10 items to a stack of 95 (max 100) should clamp to 100"),
-    Inventory->GetItemCount(ItemID),
-    100
-);
-
-TestTrue(
-    TEXT("AI: entering chase state should set movement speed to SprintSpeed (600)"),
-    FMath::IsNearlyEqual(AIController->GetMoveSpeed(), 600.0f, 0.1f)
-);
-
-// ❌ BAD — useless when it fails
-TestTrue(TEXT("health check"), bResult);
-TestEqual(TEXT("test"), Value, 0);
-```
+## MANUAL QA REQUIRED — CANNOT BE AUTOMATED
+| ID | Taxonomy | What to Verify | Why Not Automatable |
+|----|----------|---------------|---------------------|
+| QA-001 | 4.2 | Climb up animation arc looks correct visually | Animation blend quality — no numeric assertion possible |
+| QA-002 | 3.3 | Corner wrap animation has no visible pop or snap | Visual quality of procedural IK during corner |
+| QA-003 | 5.2 | Lache swing feels responsive and physically plausible | Subjective feel — no threshold can define "correct" |
 
 ---
 
-### Build File Requirements
-
-#### [ProjectName]Tests.Build.cs
-
-Provide complete Build.cs content:
-```csharp
-using UnrealBuildTool;
-
-public class [ProjectName]Tests : ModuleRules
-{
-    public [ProjectName]Tests(ReadOnlyTargetRules Target) : base(Target)
-    {
-        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-
-        PublicDependencyModuleNames.AddRange(new string[]
-        {
-            "Core",
-            "CoreUObject",
-            "Engine",
-            "[ProjectName]"  // the module being tested
-        });
-
-        PrivateDependencyModuleNames.AddRange(new string[]
-        {
-            "AutomationController",  // VERIFY: confirm module name in UE5.[version]
-        });
-
-        // Only include test module in non-shipping builds
-        if (Target.Configuration != UnrealTargetConfiguration.Shipping)
-        {
-            PrivateDependencyModuleNames.Add("AutomationTest");
-            // VERIFY: confirm AutomationTest is a separate module in UE5.[version]
-            // Alternative: tests may be included in the main module under #if WITH_AUTOMATION_TESTS
-        }
-    }
-}
-```
-
-Note any VERIFY comments and resolve them against the actual UE5 version
-found in the project files.
+## FOCUS NEXT RUN
+<!-- Human edits this section between runs to redirect the agent. -->
+<!-- Agent clears this after processing and notes it in Run History. -->
+<!-- Example: -->
+<!-- - Tier 3 corner transitions need stress tests -->
+<!-- - Add lache miss cases (Tier 5.2) -->
 
 ---
 
-### Convenience Scripts
+## IMPLEMENTED — DO NOT RE-PROPOSE
+<!-- One line per test. Enough to detect duplicates. -->
+| ID | Name | Taxonomy | Behavior | Condition | Type |
+|----|------|----------|----------|-----------|------|
+| TC-0001 | [ShortName] | [e.g., 1.2] | [one clause] | happy/edge/failure/stress | Unit/Component/World/Integration/Perf |
 
-#### RunTests.bat (Windows)
-```batch
-@echo off
-SET PROJECT_ROOT=%~dp0
-SET UE5_ROOT=%UE5_ROOT%
+---
 
-IF "%UE5_ROOT%"=="" (
-    echo ERROR: UE5_ROOT environment variable not set.
-    echo Set it to your UE5 engine root, e.g. C:\Program Files\Epic Games\UE_5.3
-    exit /b 1
-)
+## PLANNED — NOT YET IMPLEMENTED
 
-"%UE5_ROOT%\Engine\Build\BatchFiles\RunUAT.bat" RunUnrealTests ^
-    -project="%PROJECT_ROOT%[ProjectName].uproject" ^
-    -filter="[ProjectName].*" ^
-    -ReportOutputPath="%PROJECT_ROOT%TestResults\" ^
-    -log="%PROJECT_ROOT%TestResults\TestLog.txt"
+### TC-[NNNN]
+- **Name:** [ShortCamelCase]
+- **Registry String:** `ClimbingSystem.[Tier].[Mechanic].[BehaviorDescription]`
+- **Taxonomy:** [ID] — [name] (e.g., "1.2 — Trace Accuracy")
+- **File:** `Source/[ProjectName]/Tests/[Tier]/[MechanicName]Tests.cpp`
+- **Type:** Unit | Component | World | Integration | Performance | NetworkApprox
+- **Priority:** P0 | P1 | P2 | P3
+- **System Under Test:** [class or system name]
+- **Behavior Tested:** [one sentence]
+- **Preconditions:** [required state before test runs]
+- **Action:** [inputs, calls, events]
+- **Expected Outcome:** [specific — cite DESIGN FACT for any numeric value]
+- **Edge/Failure Condition:** happy path | edge case | failure mode | stress | boundary
+- **Why This Matters:** [one sentence — what breaks in the game if this fails]
+- **Extends:** TC-[NNNN] | NONE
+- **Requires World:** YES | NO
+- **Requires Network:** YES | APPROX | NO
+- **Depends On:** TC-[NNNN] must be implemented first | NONE
+- **Added In Run:** [N]
+- **Notes:** [implementation warnings, VALUE UNKNOWN flags, API uncertainty]
 
-echo Test results written to %PROJECT_ROOT%TestResults\
-```
+---
 
-#### RunTests.sh (Mac/Linux)
-```bash
-#!/bin/bash
-set -e
-
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-UE5_ROOT="${UE5_ROOT:?UE5_ROOT environment variable must be set}"
-
-"$UE5_ROOT/Engine/Build/BatchFiles/RunUAT.sh" RunUnrealTests \
-    -project="$PROJECT_ROOT/[ProjectName].uproject" \
-    -filter="[ProjectName].*" \
-    -ReportOutputPath="$PROJECT_ROOT/TestResults/" \
-    -log="$PROJECT_ROOT/TestResults/TestLog.txt"
-
-echo "Test results written to $PROJECT_ROOT/TestResults/"
-```
+## COVERAGE SUMMARY
+| Taxonomy ID | Mechanic | Implemented | Planned | Est. Coverage | Last Run |
+|-------------|----------|-------------|---------|---------------|----------|
+[one row per taxonomy item]
 
 ---
 
 ═══════════════════════════════════════════════════════════════
-## PHASE 4: OUTPUT VALIDATION
+## PHASE 5: REGISTRY UPDATE RULES
 ═══════════════════════════════════════════════════════════════
 
-Before considering the output complete, verify each item below.
-Do NOT self-report. Demonstrate each check with evidence from your output.
+1. APPEND new entries to PLANNED. Never modify IMPLEMENTED.
+2. UPDATE RUN HISTORY with this run's row including taxonomy coverage %.
+3. UPDATE TAXONOMY COVERAGE SNAPSHOT with new estimates.
+4. UPDATE DESIGN FACTS if new values found in source files.
+5. UPDATE the header totals line.
+6. CLEAR the FOCUS NEXT RUN section if it was processed,
+   note it in Run History as "Addressed focus: [items]".
+7. NEVER delete any entry. Use Status: INVALIDATED if needed.
+8. NEVER move a TC from PLANNED to IMPLEMENTED (humans do this).
+9. NEVER add a numeric value to any TC without citing a DESIGN FACT.
 
-| Check | How to Demonstrate |
-|-------|--------------------|
-| Gap analysis covers every .cpp in Source/ | Quote the total file count from your scan |
-| No existing test is recreated | List the existing tests found and confirm none appear in new output |
-| Every test file includes all required headers | Show the #include list for the most complex test file |
-| No invented API is used without // VERIFY | Quote 3 test assertions from your output and confirm each uses a confirmed API |
-| Test names follow [Project].[System].[Subsystem].[Behavior] format | Quote 3 test registry names from your output |
-| World-dependent tests all call Teardown() | Quote the teardown call from one world test |
-| All performance thresholds have // THRESHOLD comments | Quote one threshold with its justification |
-| Build.cs is provided | State the filename and the modules listed |
-| CI workflow is provided or existing workflow is noted as sufficient | State the workflow filename |
-| Deferred systems are listed (if >20 systems) | List them or confirm count was ≤20 |
+═══════════════════════════════════════════════════════════════
+## PHASE 6: OUTPUT VALIDATION
+═══════════════════════════════════════════════════════════════
 
-Output this table filled in. Any row you cannot fill in means that item
-is missing from your output — go back and add it before finishing.
+| Check | Evidence |
+|-------|----------|
+| Registry read before proposing tests | [highest TC ID found or "not found"] |
+| Taxonomy coverage table produced | [confirm — list tier range covered] |
+| No existing TC re-proposed | [list CONFLICT blocks or "none"] |
+| All new TCs reference taxonomy ID | [sample 3 TCs and their taxonomy IDs] |
+| All numeric values cite DESIGN FACT or VALUE UNKNOWN | [sample 3 values] |
+| Tier ordering respected (higher tiers first) | [confirm which tiers were worked this run and why] |
+| PLANNED and IMPLEMENTED remain separate | [confirm] |
+| Run History updated | [confirm] |
+| Taxonomy Coverage Snapshot updated | [confirm new % for each item worked] |
+| FOCUS NEXT RUN processed and cleared (if present) | [confirm or "not present"] |
+| No implementation code written | [confirm — "zero lines of C++ produced"] |
+| DESIGN FACTS table updated with any new values | [list new facts added or "none"] |
 
 ═══════════════════════════════════════════════════════════════
 ## EXECUTION ORDER SUMMARY
 ═══════════════════════════════════════════════════════════════
 
-1. Output Phase 0 Assumptions block (partially filled)
-2. Read PROMPT.md → complete the 2-sentence project summary
-3. Read .github/ files → list conventions and existing CI
-4. Read root docs → note architectural rules
-5. Scan for existing tests → output complete list
-6. Scan Source/ → output complete file list
-7. Fill in Phase 0 Assumptions block fully
-8. Output Gap Analysis table
-9. Output SharedTestHelpers.h
-   --- FILE COMPLETE: SharedTestHelpers.h ---
-   NEXT: [ProjectName]Tests.Build.cs
-10. Output Build.cs
-    --- FILE COMPLETE: [ProjectName]Tests.Build.cs ---
-    NEXT: [first test file]
-11. Output each test file, one at a time, pausing if >5 files
-12. Output RunTests.bat
-13. Output RunTests.sh
-15. Output Phase 4 validation table, filled in with evidence
+1.  Read TEST_REGISTRY.md → output Registry State block
+2.  Read PROMPT.md → output 2-sentence summary + note any mechanics
+    not in taxonomy (add them)
+3.  Read .github/ files → note climbing-specific conventions
+4.  Read root docs → populate DESIGN FACTS table
+5.  Scan Source/ → map files to taxonomy tiers
+6.  Read FOCUS NEXT RUN section
+7.  Output Taxonomy Coverage table (gap analysis)
+8.  Output "This Run's Focus" block
+9.  For each gap, working P0 → P1 → P2 → P3, tier by tier:
+    a. Check conflict → output CONFLICT DETECTED if found
+    b. Check near-duplicate → output NEAR-DUPLICATE if found
+    c. Output full TC entry
+10. Output the complete updated TEST_REGISTRY.md
+    (full file — write directly to disk)
+11. Output Phase 6 validation table
+
+═══════════════════════════════════════════════════════════════
+## HARD CONSTRAINTS
+═══════════════════════════════════════════════════════════════
+
+- NEVER write C++ code, Blueprint pseudo-code, or any implementation
+- NEVER re-propose a test matching an existing entry's taxonomy + condition
+- NEVER leave a required TC field blank
+- NEVER invent a number — cite DESIGN FACT or write VALUE UNKNOWN
+- NEVER propose automated tests for Blueprint-only systems (use MANUAL QA)
+- NEVER move a TC from PLANNED to IMPLEMENTED
+- NEVER delete any TC entry
+- NEVER skip a taxonomy tier that is below ~70% to work a lower-priority tier
+  (exception: FOCUS NEXT RUN overrides this)
+- ALWAYS cite taxonomy ID on every TC
+- ALWAYS continue TC-NNNN sequence from highest existing ID
+- ALWAYS note inter-TC dependencies (Depends On field)
+- ALWAYS flag VALUE UNKNOWN rather than inventing a threshold
 ```

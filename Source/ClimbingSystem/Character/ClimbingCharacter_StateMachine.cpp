@@ -174,7 +174,12 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 					// To position the character in front of the wall, we ADD the surface normal
 					const float WallStandOff = ClimbingCapsuleRadius + 8.0f;
 					const float HangVerticalOffset = ClimbingCapsuleHalfHeight + 12.0f;
-					const FVector HangLocation = DetectionResult.LedgePosition + DetectionResult.SurfaceNormal * WallStandOff - FVector::UpVector * HangVerticalOffset;
+					const FVector HangLocation = DetectionResult.LedgePosition
+						+ DetectionResult.SurfaceNormal * WallStandOff
+						- FVector::UpVector * HangVerticalOffset
+						+ DetectionResult.SurfaceNormal * HangingCharacterOffset.X
+						+ FVector::UpVector * HangingCharacterOffset.Z
+						+ FVector::CrossProduct(FVector::UpVector, DetectionResult.SurfaceNormal) * HangingCharacterOffset.Y;
 					SetActorLocation(HangLocation, false);
 					ClimbingMovement->SetAnchor(DetectionResult.HitComponent.Get(), GetActorLocation());
 				}
@@ -191,6 +196,32 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 				if (UAnimMontage* GrabMontage = GetMontageForSlot(EClimbingAnimationSlot::GrabLedge))
 				{
 					PlayStateMontage(GrabMontage);
+
+					// After grab montage ends, start looping HangIdle
+					if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+					{
+						FOnMontageBlendingOutStarted BlendOutDelegate;
+						BlendOutDelegate.BindWeakLambda(this, [this](UAnimMontage*, bool bInterrupted)
+						{
+							if (bInterrupted || !ClimbingMovement || ClimbingMovement->CurrentClimbingState != EClimbingState::Hanging)
+							{
+								return;
+							}
+							if (UAnimMontage* IdleMontage = GetMontageForSlot(EClimbingAnimationSlot::HangIdle))
+							{
+								if (UAnimInstance* AI = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+								{
+									AI->Montage_Play(IdleMontage);
+									if (!bEnableIdleVariations)
+									{
+										const FName Sec = IdleMontage->GetSectionName(0);
+										AI->Montage_SetNextSection(Sec, Sec, IdleMontage);
+									}
+								}
+							}
+						});
+						AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, GrabMontage);
+					}
 
 					// Set up motion warp target
 					if (MotionWarping && DetectionResult.bValid)
@@ -214,11 +245,21 @@ void AClimbingCharacter::OnStateEnter(EClimbingState NewState, const FClimbingDe
 				if (UAnimMontage* IdleMontage = GetMontageForSlot(EClimbingAnimationSlot::HangIdle))
 				{
 					PlayStateMontage(IdleMontage);
+
+					// Loop the idle montage when variations are disabled
+					if (!bEnableIdleVariations)
+					{
+						if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+						{
+							const FName DefaultSection = IdleMontage->GetSectionName(0);
+							AnimInstance->Montage_SetNextSection(DefaultSection, DefaultSection, IdleMontage);
+						}
+					}
 				}
 			}
 
 			// Start idle variation timer
-			if (GetWorld())
+			if (bEnableIdleVariations && GetWorld())
 			{
 				GetWorld()->GetTimerManager().SetTimer(
 					IdleVariationTimerHandle,

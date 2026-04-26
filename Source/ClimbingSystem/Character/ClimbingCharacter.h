@@ -200,6 +200,54 @@ public:
 		ClampMin = "5.0", ClampMax = "30.0"))
 	float LedgeDetectionRadius = 12.0f;
 
+	/** Number of arc sample points for ledge detection. More = wider reach, more traces. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Number of points sampled along the predicted arc for ledge detection. Each point fires a grid of line traces.",
+		ClampMin = "3", ClampMax = "16"))
+	int32 LedgeArcSamples = 6;
+
+	/** Total arc time simulated for ledge detection (seconds). Controls reach distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Duration of the simulated arc used for ledge detection. Longer = farther reach.",
+		ClampMin = "0.1", ClampMax = "1.0"))
+	float LedgeArcDuration = 0.35f;
+
+	/** Horizontal half-extent of the grid at each arc sample (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Half-width of the horizontal grid spread at each arc sample point.",
+		ClampMin = "5.0", ClampMax = "60.0"))
+	float LedgeGridHalfWidth = 30.0f;
+
+	/** Vertical half-extent of the grid at each arc sample (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Half-height of the vertical grid spread at each arc sample point.",
+		ClampMin = "5.0", ClampMax = "60.0"))
+	float LedgeGridHalfHeight = 25.0f;
+
+	/** Number of horizontal columns in the grid (odd = centre column included). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Horizontal column count of the grid at each arc sample. 3 or 5 recommended.",
+		ClampMin = "1", ClampMax = "7"))
+	int32 LedgeGridColumns = 3;
+
+	/** Number of vertical rows in the grid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Vertical row count of the grid at each arc sample. 3 recommended.",
+		ClampMin = "1", ClampMax = "7"))
+	int32 LedgeGridRows = 3;
+
+	/** Length of each downward line trace in the grid (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "Length of each downward line trace fired from a grid cell to find a ledge top.",
+		ClampMin = "10.0", ClampMax = "120.0"))
+	float LedgeGridTraceLength = 50.0f;
+
+	/** Distance behind a ledge to trace for a backing wall (braced-hang check), in cm. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
+		meta = (ToolTip = "How far behind the ledge to trace for a backing wall. If a wall is found within this distance the hang is classified as braced, otherwise free-hang.",
+		ClampMin = "10.0", ClampMax = "150.0"))
+	float BracedWallCheckDepth = 80.0f;
+
 	/** Minimum ledge depth to be considered climbable (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Detection",
 		meta = (ToolTip = "Minimum horizontal depth of a ledge to be climbable. Prevents grabbing thin lips.",
@@ -461,6 +509,11 @@ public:
 	// State Machine Settings
 	// ========================================================================
 
+	/** Offset applied to the character when entering Hanging state (cm). X = forward/back from wall, Y = left/right, Z = up/down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|StateMachine",
+		meta = (ToolTip = "Offset applied when entering Hanging state relative to the computed hang position. X = into/away from wall (along surface normal), Y = lateral, Z = vertical. Negative Z lowers the character closer to the wall."))
+	FVector HangingCharacterOffset = FVector(0.0f, 0.0f, -30.0f);
+
 	/** Collision profile during climbing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|StateMachine",
 		meta = (ToolTip = "Collision profile during climbing. Must ignore WorldStatic/WorldDynamic while retaining Pawn blocking. Prevents capsule-wall jitter."))
@@ -595,9 +648,15 @@ public:
 	// Animations — Idle Variations
 	// ========================================================================
 
+	/** Whether idle variations are enabled. When false, HangIdle loops without interruption. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Animations|IdleVariation",
+		meta = (ToolTip = "If false, the character plays HangIdle continuously without idle variation montages. Enable for variety at the cost of blend transitions."))
+	bool bEnableIdleVariations = false;
+
 	/** Additional idle variations for hang state. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Animations|IdleVariation",
-		meta = (ToolTip = "Array of additional idle variation montages. Selected randomly after IdleVariationDelay."))
+		meta = (ToolTip = "Array of additional idle variation montages. Selected randomly after IdleVariationDelay.",
+		EditCondition = "bEnableIdleVariations"))
 	TArray<TObjectPtr<UAnimMontage>> HangIdleVariations;
 
 	/** Delay before idle variation plays (seconds). */
@@ -998,6 +1057,13 @@ protected:
 
 	/** Gets surface data from a hit component (via tag or reference). */
 	const UClimbingSurfaceData* GetSurfaceDataFromComponent(UPrimitiveComponent* Component) const;
+
+	/**
+	 * Checks whether a backing wall exists behind a detected ledge.
+	 * Traces from the ledge position inward (opposite to SurfaceNormal) by BracedWallCheckDepth.
+	 * Sets Result.bIsFreeHang = true when no wall is found.
+	 */
+	void ClassifyHangType(FClimbingDetectionResult& Result) const;
 
 	// ========================================================================
 	// IK Helpers

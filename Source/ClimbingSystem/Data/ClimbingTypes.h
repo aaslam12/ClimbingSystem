@@ -262,6 +262,10 @@ struct FClimbingDetectionResult
 	UPROPERTY(BlueprintReadOnly, Category = "Climbing")
 	bool bValid = false;
 
+	/** True when no backing wall is behind the ledge — character free-hangs with dangling legs */
+	UPROPERTY(BlueprintReadOnly, Category = "Climbing")
+	bool bIsFreeHang = false;
+
 	FClimbingDetectionResult() = default;
 
 	/** Resets all fields to default invalid state */
@@ -273,6 +277,7 @@ struct FClimbingDetectionResult
 		ClearanceType = EClimbClearanceType::None;
 		HitComponent.Reset();
 		bValid = false;
+		bIsFreeHang = false;
 	}
 
 	/** Creates a network-safe version of this result (excludes HitComponent) */

@@ -121,265 +121,223 @@ FClimbingDetectionResult AClimbingCharacter::PerformLedgeDetection() const
 {
 	FClimbingDetectionResult Result;
 
-	if (!GetWorld())
+	if (!GetWorld() || !ClimbingMovement)
 	{
 		return Result;
 	}
 
-	const FVector CharacterLocation = GetActorLocation();
-	const FVector ForwardVector = GetActorForwardVector();
-	const FVector UpVector = FVector::UpVector;
-	const EClimbingState CurrentState = ClimbingMovement ? ClimbingMovement->CurrentClimbingState : EClimbingState::None;
-	const bool bIsAttachedLedgeState =
-		CurrentState == EClimbingState::Hanging ||
-		CurrentState == EClimbingState::Shimmying;
-	const float ForwardTraceHeightOffset = bIsAttachedLedgeState
-		? FMath::Max(ClimbingCapsuleHalfHeight * 0.6f, LedgeDetectionRadius * 2.0f)
-		: (LedgeDetectionVerticalReach * 0.5f);
+	const FVector ActorLoc  = GetActorLocation();
+	const FVector Origin    = ActorLoc + FVector::UpVector * (OriginalCapsuleHalfHeight * 0.75f);
+	const FVector Forward   = GetActorForwardVector();
+	const FVector Right     = GetActorRightVector();
+	const FVector Up        = FVector::UpVector;
+	const float   GravityZ  = ClimbingMovement->GetGravityZ(); // negative
 
-	// Collision query parameters
+	// Arc velocity: use actual velocity when airborne, otherwise a gentle forward+up probe
+	FVector ArcVel = ClimbingMovement->Velocity;
+	if (!ClimbingMovement->IsFalling() || ArcVel.IsNearlyZero())
+	{
+		// Grounded / attached: probe forward and slightly upward so we scan above the character
+		ArcVel = Forward * (LedgeDetectionForwardReach / LedgeArcDuration)
+		       + Up      * (LedgeDetectionVerticalReach * 0.5f / LedgeArcDuration);
+	}
+
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 	QueryParams.bTraceComplex = false;
-	QueryParams.bReturnPhysicalMaterial = true;
 
-	// Step 1: Forward trace to find wall
-	const FVector ForwardTraceStart = CharacterLocation + UpVector * ForwardTraceHeightOffset;
-	const FVector ForwardTraceEnd = ForwardTraceStart + ForwardVector * LedgeDetectionForwardReach;
+	// Grid step sizes (avoid divide-by-zero for 1-column/row configs)
+	const float ColStep = (LedgeGridColumns > 1) ? (LedgeGridHalfWidth  * 2.0f / (LedgeGridColumns - 1)) : 0.0f;
+	const float RowStep = (LedgeGridRows    > 1) ? (LedgeGridHalfHeight * 2.0f / (LedgeGridRows    - 1)) : 0.0f;
 
-	FHitResult ForwardHit;
-	bool bForwardHit = GetWorld()->SweepSingleByChannel(
-		ForwardHit,
-		ForwardTraceStart,
-		ForwardTraceEnd,
-		FQuat::Identity,
-		ECC_WorldStatic,
-		FCollisionShape::MakeSphere(LedgeDetectionRadius),
-		QueryParams
-	);
+	// Best candidate across all arc samples
+	FClimbingDetectionResult BestResult;
+	float BestScore = TNumericLimits<float>::Max();
+
+	const float dt = LedgeArcDuration / LedgeArcSamples;
+
+	for (int32 s = 1; s <= LedgeArcSamples; ++s)
+	{
+		const float t = s * dt;
+		// Kinematic arc position
+		const FVector ArcPoint = Origin
+			+ ArcVel * t
+			+ FVector(0.f, 0.f, 0.5f * GravityZ * t * t);
+
+		// Grid: columns along Right, rows along Up
+		for (int32 col = 0; col < LedgeGridColumns; ++col)
+		{
+			const float ColOffset = (LedgeGridColumns > 1)
+				? (-LedgeGridHalfWidth + col * ColStep)
+				: 0.0f;
+
+			for (int32 row = 0; row < LedgeGridRows; ++row)
+			{
+				const float RowOffset = (LedgeGridRows > 1)
+					? (-LedgeGridHalfHeight + row * RowStep)
+					: 0.0f;
+
+				const FVector CellOrigin = ArcPoint + Right * ColOffset + Up * RowOffset;
+
+				// --- Trace A: downward — finds horizontal ledge tops (beams, platforms) ---
+				{
+					const FVector TraceEnd = CellOrigin - Up * LedgeGridTraceLength;
+					FHitResult Hit;
+					const bool bHit = GetWorld()->LineTraceSingleByChannel(
+						Hit, CellOrigin, TraceEnd, ECC_WorldStatic, QueryParams);
 
 #if !UE_BUILD_SHIPPING
-	if (bDrawDebug)
-	{
-		DrawDebugLine(GetWorld(), ForwardTraceStart, ForwardTraceEnd, bForwardHit ? FColor::Green : FColor::Red, false, 0.1f);
-	}
+					if (bDrawDebug)
+					{
+						DrawDebugLine(GetWorld(), CellOrigin, bHit ? Hit.ImpactPoint : TraceEnd,
+							bHit ? FColor::Green : FColor(80,80,80), false, 0.1f, 0, 1.0f);
+					}
 #endif
 
-	if (!bForwardHit)
-	{
-		return Result;
-	}
+					if (bHit && Hit.Component.IsValid()
+						&& !Hit.Component->ComponentHasTag(FName("Unclimbable"))
+						&& !Hit.Component->ComponentHasTag(FName("LadderOnly")))
+					{
+						const float NormalAngle = FMath::RadiansToDegrees(
+							FMath::Acos(FMath::Clamp(FVector::DotProduct(Hit.ImpactNormal, Up), -1.f, 1.f)));
+						const float HeightAboveFeet = Hit.ImpactPoint.Z - (ActorLoc.Z - OriginalCapsuleHalfHeight);
 
-	EClimbSurfaceTier SurfaceTier = EClimbSurfaceTier::Untagged;
-	const bool bHasValidForwardComponent = ForwardHit.Component.IsValid();
-	const bool bHasUnclimbableTag = bHasValidForwardComponent && ForwardHit.Component->ComponentHasTag(FName("Unclimbable"));
-	const bool bHasLadderTag = bHasValidForwardComponent && ForwardHit.Component->ComponentHasTag(FName("LadderOnly"));
-	const bool bHasOneWayTag = bHasValidForwardComponent && ForwardHit.Component->ComponentHasTag(FName("ClimbableOneWay"));
-	const bool bHasClimbableTag = bHasValidForwardComponent && ForwardHit.Component->ComponentHasTag(FName("Climbable"));
+						if (NormalAngle <= MaxClimbableSurfaceAngle
+							&& HeightAboveFeet >= 0.0f
+							&& HeightAboveFeet <= LedgeDetectionVerticalReach)
+						{
+							const float HorizDist = FVector::Dist2D(Hit.ImpactPoint, ActorLoc);
+							const float Score = static_cast<float>(s) + HorizDist * 0.001f;
+							if (Score < BestScore)
+							{
+								BestScore = Score;
+								EClimbSurfaceTier Tier = EClimbSurfaceTier::Untagged;
+								if (Hit.Component->ComponentHasTag(FName("Climbable")))         Tier = EClimbSurfaceTier::Climbable;
+								else if (Hit.Component->ComponentHasTag(FName("ClimbableOneWay"))) Tier = EClimbSurfaceTier::ClimbableOneWay;
+								BestResult.LedgePosition = Hit.ImpactPoint;
+								BestResult.SurfaceNormal  = (ActorLoc - Hit.ImpactPoint).GetSafeNormal2D();
+								BestResult.SurfaceTier    = Tier;
+								BestResult.ClearanceType  = EClimbClearanceType::Full;
+								BestResult.HitComponent   = Hit.Component;
+								BestResult.bValid         = true;
+							}
+						}
+					}
+				}
 
-	if (bHasUnclimbableTag)
-	{
+				// --- Trace B: forward — finds vertical walls, then resolves ledge top ---
+				{
+					// Use the arc's forward direction (velocity direction projected horizontal)
+					const FVector ArcFwd = ArcVel.GetSafeNormal2D().IsNearlyZero()
+						? Forward : ArcVel.GetSafeNormal2D();
+					const FVector FwdEnd = CellOrigin + ArcFwd * LedgeGridTraceLength;
+					FHitResult WallHit;
+					const bool bWallHit = GetWorld()->LineTraceSingleByChannel(
+						WallHit, CellOrigin, FwdEnd, ECC_WorldStatic, QueryParams);
+
+#if !UE_BUILD_SHIPPING
+					if (bDrawDebug)
+					{
+						DrawDebugLine(GetWorld(), CellOrigin, bWallHit ? WallHit.ImpactPoint : FwdEnd,
+							bWallHit ? FColor::Yellow : FColor(60,60,60), false, 0.1f, 0, 1.0f);
+					}
+#endif
+
+					if (!bWallHit || !WallHit.Component.IsValid())                                    { continue; }
+					if (WallHit.Component->ComponentHasTag(FName("Unclimbable")))                     { continue; }
+					if (WallHit.Component->ComponentHasTag(FName("LadderOnly")))                      { continue; }
+
+					// Must be roughly vertical
+					const float WallAngle = FMath::RadiansToDegrees(
+						FMath::Acos(FMath::Clamp(FMath::Abs(FVector::DotProduct(WallHit.ImpactNormal, Up)), 0.f, 1.f)));
+					if (WallAngle < (90.0f - MaxClimbableSurfaceAngle))                               { continue; }
+
+					// Resolve ledge top: trace down from just above the wall impact
+					const FVector LedgeProbeStart = WallHit.ImpactPoint + Up * LedgeGridTraceLength;
+					const FVector LedgeProbeEnd   = WallHit.ImpactPoint - Up * 5.0f;
+					FHitResult LedgeHit;
+					if (!GetWorld()->LineTraceSingleByChannel(
+						LedgeHit, LedgeProbeStart, LedgeProbeEnd, ECC_WorldStatic, QueryParams))      { continue; }
+
+					const float LedgeNormalAngle = FMath::RadiansToDegrees(
+						FMath::Acos(FMath::Clamp(FVector::DotProduct(LedgeHit.ImpactNormal, Up), -1.f, 1.f)));
+					if (LedgeNormalAngle > MaxClimbableSurfaceAngle)                                  { continue; }
+
+					const float HeightAboveFeet = LedgeHit.ImpactPoint.Z - (ActorLoc.Z - OriginalCapsuleHalfHeight);
+					if (HeightAboveFeet < 0.0f || HeightAboveFeet > LedgeDetectionVerticalReach)      { continue; }
+
+					const float HorizDist = FVector::Dist2D(LedgeHit.ImpactPoint, ActorLoc);
+					const float Score = static_cast<float>(s) + HorizDist * 0.001f;
+					if (Score < BestScore)
+					{
+						BestScore = Score;
+						EClimbSurfaceTier Tier = EClimbSurfaceTier::Untagged;
+						if (WallHit.Component->ComponentHasTag(FName("Climbable")))         Tier = EClimbSurfaceTier::Climbable;
+						else if (WallHit.Component->ComponentHasTag(FName("ClimbableOneWay"))) Tier = EClimbSurfaceTier::ClimbableOneWay;
+						BestResult.LedgePosition = LedgeHit.ImpactPoint;
+						BestResult.SurfaceNormal  = WallHit.ImpactNormal;
+						BestResult.SurfaceTier    = Tier;
+						BestResult.ClearanceType  = EClimbClearanceType::Full;
+						BestResult.HitComponent   = WallHit.Component;
+						BestResult.bValid         = true;
+					}
+				}
+			}
+		}
+
 #if !UE_BUILD_SHIPPING
 		if (bDrawDebug)
 		{
-			DrawDebugLine(GetWorld(), ForwardTraceStart, ForwardTraceEnd, FColor::Yellow, false, 0.1f);
+			DrawDebugSphere(GetWorld(), ArcPoint, 6.0f, 6, FColor::Cyan, false, 0.1f);
 		}
 #endif
-		return Result;
 	}
 
-	if (bHasLadderTag)
+	if (!BestResult.bValid)
 	{
 		return Result;
 	}
 
-	if (bHasOneWayTag)
+	// Clearance check above the best ledge
 	{
-		SurfaceTier = EClimbSurfaceTier::ClimbableOneWay;
-		const UClimbingSurfaceData* SurfaceData = GetSurfaceDataFromComponent(ForwardHit.Component.Get());
-		if (SurfaceData && !ValidateOneWayApproach(ForwardHit.ImpactNormal, SurfaceData->OneWayApproachDirection, SurfaceData->ApproachAngleTolerance))
+		const FVector ClearStart = BestResult.LedgePosition + Up * 10.0f;
+		FCollisionQueryParams ClearParams = QueryParams;
+		if (BestResult.HitComponent.IsValid())
 		{
-			return Result;
+			ClearParams.AddIgnoredComponent(BestResult.HitComponent.Get());
+		}
+
+		FHitResult ClearHit;
+		const bool bBlocked = GetWorld()->SweepSingleByChannel(
+			ClearHit, ClearStart, ClearStart + Up * OriginalCapsuleHalfHeight * 2.0f,
+			FQuat::Identity, ECC_WorldStatic,
+			FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f), ClearParams);
+
+		if (bBlocked)
+		{
+			FHitResult CrouchHit;
+			const bool bCrouchBlocked = GetWorld()->SweepSingleByChannel(
+				CrouchHit, ClearStart, ClearStart + Up * OriginalCapsuleHalfHeight,
+				FQuat::Identity, ECC_WorldStatic,
+				FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f), ClearParams);
+			BestResult.ClearanceType = bCrouchBlocked
+				? EClimbClearanceType::None : EClimbClearanceType::CrouchOnly;
 		}
 	}
 
-	if (bHasClimbableTag)
-	{
-		SurfaceTier = EClimbSurfaceTier::Climbable;
-	}
-	else
-	{
-		const float WallAngle = FMath::RadiansToDegrees(FMath::Acos(FMath::Abs(FVector::DotProduct(ForwardHit.ImpactNormal, UpVector))));
-		if (WallAngle < (90.0f - MaxClimbableSurfaceAngle))
-		{
-			return Result;
-		}
-	}
-
-	// Step 2: Trace downward from above the wall to find the ledge top
-	// Use multi-trace to handle stacked ledges - we want the topmost valid ledge
-	const FVector DownTraceStart = ForwardHit.ImpactPoint + ForwardVector * MinLedgeDepth + UpVector * LedgeDetectionVerticalReach;
-	const FVector DownTraceEnd = DownTraceStart - UpVector * LedgeDetectionVerticalReach * 1.5f;
-
-	TArray<FHitResult> DownHits;
-	GetWorld()->SweepMultiByChannel(
-		DownHits,
-		DownTraceStart,
-		DownTraceEnd,
-		FQuat::Identity,
-		ECC_WorldStatic,
-		FCollisionShape::MakeSphere(LedgeDetectionRadius),
-		QueryParams
-	);
+	ClassifyHangType(BestResult);
 
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug)
 	{
-		DrawDebugLine(GetWorld(), DownTraceStart, DownTraceEnd, DownHits.Num() > 0 ? FColor::Green : FColor::Yellow, false, 0.1f);
+		DrawDebugSphere(GetWorld(), BestResult.LedgePosition, 12.0f, 8, FColor::Cyan, false, 0.15f);
+		DrawDebugDirectionalArrow(GetWorld(), BestResult.LedgePosition,
+			BestResult.LedgePosition + BestResult.SurfaceNormal * 40.0f,
+			10.0f, FColor::Blue, false, 0.15f);
 	}
 #endif
 
-	if (DownHits.Num() == 0)
-	{
-		return Result;
-	}
-
-	// Find the best ledge hit - while attached to a ledge, prefer the previous ledge height
-	// to avoid bouncing between stacked surfaces during hanging/shimmy re-scans.
-	const bool bIsCurrentlyClimbing = ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None;
-	const float PreferredLedgeZ = (bIsAttachedLedgeState && CurrentDetectionResult.bValid)
-		? CurrentDetectionResult.LedgePosition.Z
-		: CharacterLocation.Z;
-
-	FHitResult* BestDownHit = nullptr;
-	float BestScore = TNumericLimits<float>::Max();
-
-	for (FHitResult& DownHit : DownHits)
-	{
-		// Verify this is approximately horizontal (a ledge top)
-		const float LedgeTopAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(DownHit.ImpactNormal, UpVector)));
-		if (LedgeTopAngle > MaxClimbableSurfaceAngle)
-		{
-			continue; // Not a flat enough ledge top
-		}
-
-		// Calculate preference score
-		float Score;
-		if (bIsCurrentlyClimbing)
-		{
-			// When climbing, prefer ledges at similar height to the active ledge if available.
-			Score = FMath::Abs(DownHit.ImpactPoint.Z - PreferredLedgeZ);
-		}
-		else
-		{
-			// When not climbing (initial grab), prefer the highest reachable ledge
-			// Lower Z value in trace direction = hit earlier = higher ledge
-			Score = -DownHit.ImpactPoint.Z;
-		}
-
-		if (Score < BestScore)
-		{
-			BestScore = Score;
-			BestDownHit = &DownHit;
-		}
-	}
-
-	if (!BestDownHit)
-	{
-		return Result;
-	}
-
-	const FHitResult& DownHit = *BestDownHit;
-
-	// Step 3: Check clearance above ledge
-	const FVector ClearanceCheckStart = DownHit.ImpactPoint + UpVector * 10.0f;
-	const FVector ClearanceCheckEnd = ClearanceCheckStart + UpVector * OriginalCapsuleHalfHeight * 2.0f;
-
-	// Add the ledge components to ignore list for clearance check
-	// Both the wall (ForwardHit) and ledge top (DownHit) should be ignored
-	FCollisionQueryParams ClearanceQueryParams = QueryParams;
-	if (DownHit.Component.IsValid())
-	{
-		ClearanceQueryParams.AddIgnoredComponent(DownHit.Component.Get());
-	}
-	if (ForwardHit.Component.IsValid() && ForwardHit.Component != DownHit.Component)
-	{
-		ClearanceQueryParams.AddIgnoredComponent(ForwardHit.Component.Get());
-	}
-
-	FHitResult ClearanceHit;
-	bool bClearanceBlocked = GetWorld()->SweepSingleByChannel(
-		ClearanceHit,
-		ClearanceCheckStart,
-		ClearanceCheckEnd,
-		FQuat::Identity,
-		ECC_WorldStatic,
-		FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f),
-		ClearanceQueryParams
-	);
-
-#if !UE_BUILD_SHIPPING
-	const bool bInActiveClimbingState = ClimbingMovement && ClimbingMovement->CurrentClimbingState != EClimbingState::None;
-	if (bDrawDebug && bInActiveClimbingState && bClearanceBlocked)
-	{
-		UE_LOG(LogClimbing, Verbose, TEXT("Clearance blocked by: %s at distance %.1f"), 
-			ClearanceHit.Component.IsValid() ? *ClearanceHit.Component->GetName() : TEXT("Unknown"),
-			ClearanceHit.Distance);
-	}
-#endif
-
-	EClimbClearanceType ClearanceType = EClimbClearanceType::Full;
-	if (bClearanceBlocked)
-	{
-		// Check if crouch clearance is available
-		const FVector CrouchClearanceEnd = ClearanceCheckStart + UpVector * OriginalCapsuleHalfHeight;
-		FHitResult CrouchClearanceHit;
-		bool bCrouchBlocked = GetWorld()->SweepSingleByChannel(
-			CrouchClearanceHit,
-			ClearanceCheckStart,
-			CrouchClearanceEnd,
-			FQuat::Identity,
-			ECC_WorldStatic,
-			FCollisionShape::MakeSphere(OriginalCapsuleRadius * 0.8f),
-			ClearanceQueryParams
-		);
-
-		ClearanceType = bCrouchBlocked ? EClimbClearanceType::None : EClimbClearanceType::CrouchOnly;
-		
-#if !UE_BUILD_SHIPPING
-		if (bDrawDebug && bInActiveClimbingState)
-		{
-			UE_LOG(LogClimbing, Verbose, TEXT("Crouch clearance: %s"), bCrouchBlocked ? TEXT("BLOCKED") : TEXT("Available"));
-		}
-#endif
-	}
-
-#if !UE_BUILD_SHIPPING
-	if (bDrawDebug)
-	{
-		FColor ClearanceColor = (ClearanceType == EClimbClearanceType::Full) ? FColor::Green :
-								(ClearanceType == EClimbClearanceType::CrouchOnly) ? FColor::Yellow : FColor::Red;
-		DrawDebugLine(GetWorld(), ClearanceCheckStart, ClearanceCheckEnd, ClearanceColor, false, 0.1f);
-	}
-#endif
-
-	// Build result
-	Result.LedgePosition = DownHit.ImpactPoint;
-	Result.SurfaceNormal = ForwardHit.ImpactNormal;
-	Result.SurfaceTier = SurfaceTier;
-	Result.ClearanceType = ClearanceType;
-	Result.HitComponent = ForwardHit.Component;
-	Result.bValid = true;
-
-#if !UE_BUILD_SHIPPING
-	if (bDrawDebug)
-	{
-		DrawDebugSphere(GetWorld(), Result.LedgePosition, 10.0f, 8, FColor::Cyan, false, 0.1f);
-		DrawDebugDirectionalArrow(GetWorld(), Result.LedgePosition, Result.LedgePosition + Result.SurfaceNormal * 50.0f, 10.0f, FColor::Blue, false, 0.1f);
-	}
-#endif
-
-	return Result;
+	return BestResult;
 }
 
 FClimbingDetectionResult AClimbingCharacter::PerformLadderDetection() const
@@ -661,3 +619,36 @@ const UClimbingSurfaceData* AClimbingCharacter::GetSurfaceDataFromComponent(UPri
 
 	return nullptr;
 }
+
+void AClimbingCharacter::ClassifyHangType(FClimbingDetectionResult& Result) const
+{
+	if (!Result.bValid || !GetWorld())
+	{
+		return;
+	}
+
+	// Trace from the ledge position backward (into the wall) to check for a backing surface.
+	// SurfaceNormal points away from the wall, so -SurfaceNormal points into it.
+	const FVector TraceStart = Result.LedgePosition + FVector::UpVector * 5.0f;
+	const FVector TraceEnd   = TraceStart - Result.SurfaceNormal * BracedWallCheckDepth;
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.bTraceComplex = false;
+
+	FHitResult WallHit;
+	const bool bWallFound = GetWorld()->LineTraceSingleByChannel(
+		WallHit, TraceStart, TraceEnd, ECC_WorldStatic, QueryParams);
+
+	Result.bIsFreeHang = !bWallFound;
+
+#if !UE_BUILD_SHIPPING
+	if (bDrawDebug)
+	{
+		DrawDebugLine(GetWorld(), TraceStart, TraceEnd,
+			bWallFound ? FColor::Blue : FColor::Magenta, false, 0.1f);
+	}
+#endif
+}
+
+

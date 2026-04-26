@@ -124,14 +124,18 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 			if (HasAuthority())
 			{
 				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ?
-					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+					EClimbingState::OnLadder :
+					(DetectionResult.bIsFreeHang ? EClimbingState::Hanging : EClimbingState::BracedWall),
+					DetectionResult);
 			}
 			else
 			{
 				// Client prediction + server RPC
 				PrePredictionPosition = GetActorLocation();
 				TransitionToState(DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly ?
-					EClimbingState::OnLadder : EClimbingState::Hanging, DetectionResult);
+					EClimbingState::OnLadder :
+					(DetectionResult.bIsFreeHang ? EClimbingState::Hanging : EClimbingState::BracedWall),
+					DetectionResult);
 				Server_AttemptGrab(DetectionResult.ToNetResult());
 			}
 			CoyoteTimeRemaining = 0.0f;
@@ -229,7 +233,7 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 		if (DetectionResult.bValid)
 		{
 			// Determine target state based on surface type and ledge height
-			EClimbingState TargetState = EClimbingState::Hanging;
+			EClimbingState TargetState = EClimbingState::None;
 
 			if (DetectionResult.SurfaceTier == EClimbSurfaceTier::LadderOnly)
 			{
@@ -237,32 +241,43 @@ void AClimbingCharacter::Input_Grab(const FInputActionValue& Value)
 			}
 			else
 			{
-				// Check if this is a low ledge that should be mantled instead of hung from
-				// Only mantle from ground, not while falling (mantling needs stable footing)
-				if (!ClimbingMovement->IsFalling() && DetectionResult.ClearanceType != EClimbClearanceType::None)
-				{
-					const float CharacterFeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-					const float LedgeHeight = DetectionResult.LedgePosition.Z - CharacterFeetZ;
+				const float CharacterFeetZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+				const float LedgeHeight = DetectionResult.LedgePosition.Z - CharacterFeetZ;
 
-					// If ledge is within mantle range and has clearance, mantle over it
-					if (LedgeHeight > MantleStepMaxHeight && LedgeHeight <= MantleHighMaxHeight)
+				if (LedgeHeight > MantleHighMaxHeight)
+				{
+					// Above mantle range → ledge grab (hang)
+					TargetState = DetectionResult.bIsFreeHang ? EClimbingState::Hanging : EClimbingState::BracedWall;
+				}
+				else if (LedgeHeight > MantleStepMaxHeight && LedgeHeight <= MantleHighMaxHeight)
+				{
+					// Within mantle range — only mantle from ground with clearance
+					if (!ClimbingMovement->IsFalling() && DetectionResult.ClearanceType != EClimbClearanceType::None)
 					{
 						TargetState = EClimbingState::Mantling;
 					}
+					else
+					{
+						// Falling or no clearance — treat as ledge grab
+						TargetState = DetectionResult.bIsFreeHang ? EClimbingState::Hanging : EClimbingState::BracedWall;
+					}
 				}
+				// else: below MantleStepMaxHeight → too low, CMC step-up handles it, TargetState stays None
 			}
 
-			// Initiate grab/mantle
-			if (HasAuthority())
+			// Initiate grab/mantle (only if a valid action was determined)
+			if (TargetState != EClimbingState::None)
 			{
-				TransitionToState(TargetState, DetectionResult);
-			}
-			else
-			{
-				// Client prediction + server RPC
-				PrePredictionPosition = GetActorLocation();
-				TransitionToState(TargetState, DetectionResult);
-				Server_AttemptGrab(DetectionResult.ToNetResult());
+				if (HasAuthority())
+				{
+					TransitionToState(TargetState, DetectionResult);
+				}
+				else
+				{
+					PrePredictionPosition = GetActorLocation();
+					TransitionToState(TargetState, DetectionResult);
+					Server_AttemptGrab(DetectionResult.ToNetResult());
+				}
 			}
 		}
 	}
@@ -1042,6 +1057,11 @@ void AClimbingCharacter::TickLacheInAirState(float DeltaTime)
 
 void AClimbingCharacter::PlayIdleVariation()
 {
+	if (!bEnableIdleVariations)
+	{
+		return;
+	}
+
 	if (!ClimbingMovement || ClimbingMovement->CurrentClimbingState != EClimbingState::Hanging)
 	{
 		return;
