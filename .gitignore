@@ -11,7 +11,8 @@
 /Plugins/
 PROMPT.md
 .ignore
-*.code-workspace
+ClimbingSystem.uproject.DotSettings.user
+ClimbingSystem.code-workspace
 Makefile
 .codex
 
